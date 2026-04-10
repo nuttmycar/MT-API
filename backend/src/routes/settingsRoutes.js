@@ -1,6 +1,6 @@
 const express = require('express');
 const { Sequelize, QueryTypes } = require('sequelize');
-const { protect, requireRole } = require('../middleware/authMiddleware');
+const { protect, requireRole, requireActionAccess } = require('../middleware/authMiddleware');
 const { auditAction } = require('../middleware/auditMiddleware');
 const { getSequelize } = require('../config/db');
 const MikroTikAPI = require('../utils/mikrotikAPI');
@@ -24,6 +24,11 @@ const {
 } = require('../utils/mikrotik');
 const { getAuditLog } = require('../models/AuditLog');
 const { buildBackupPayload, writeAutoBackupFile, getBackupSchedulerStatus } = require('../utils/backupService');
+const {
+  getAlertConfig,
+  saveAlertConfig,
+  sendConfiguredAlert,
+} = require('../utils/alertService');
 const {
   getAccessControlOverview,
   saveRoleDefinitions,
@@ -259,7 +264,7 @@ router.get('/positions', protect, async (req, res) => {
 });
 
 // Create position
-router.post('/positions', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'SETTINGS_POSITION_CREATE', entityType: 'position' }), async (req, res) => {
+router.post('/positions', protect, requireActionAccess('settings', 'update'), auditAction({ action: 'SETTINGS_POSITION_CREATE', entityType: 'position' }), async (req, res) => {
   try {
     let { name, description } = req.body;
     
@@ -319,7 +324,7 @@ router.post('/positions', protect, requireRole('super_admin', 'admin'), auditAct
 });
 
 // Update position
-router.put('/positions/:id', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'SETTINGS_POSITION_UPDATE', entityType: 'position' }), async (req, res) => {
+router.put('/positions/:id', protect, requireActionAccess('settings', 'update'), auditAction({ action: 'SETTINGS_POSITION_UPDATE', entityType: 'position' }), async (req, res) => {
   try {
     let { name, description } = req.body;
 
@@ -357,7 +362,7 @@ router.put('/positions/:id', protect, requireRole('super_admin', 'admin'), audit
 });
 
 // Delete position
-router.delete('/positions/:id', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'SETTINGS_POSITION_DELETE', entityType: 'position' }), async (req, res) => {
+router.delete('/positions/:id', protect, requireActionAccess('settings', 'update'), auditAction({ action: 'SETTINGS_POSITION_DELETE', entityType: 'position' }), async (req, res) => {
   try {
     const models = getModels();
     const position = await models.Position.findByPk(req.params.id);
@@ -408,7 +413,7 @@ router.get('/departments', protect, async (req, res) => {
 });
 
 // Create department
-router.post('/departments', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'SETTINGS_DEPARTMENT_CREATE', entityType: 'department' }), async (req, res) => {
+router.post('/departments', protect, requireActionAccess('settings', 'update'), auditAction({ action: 'SETTINGS_DEPARTMENT_CREATE', entityType: 'department' }), async (req, res) => {
   try {
     const { name, description } = req.body;
     
@@ -433,7 +438,7 @@ router.post('/departments', protect, requireRole('super_admin', 'admin'), auditA
 });
 
 // Update department
-router.put('/departments/:id', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'SETTINGS_DEPARTMENT_UPDATE', entityType: 'department' }), async (req, res) => {
+router.put('/departments/:id', protect, requireActionAccess('settings', 'update'), auditAction({ action: 'SETTINGS_DEPARTMENT_UPDATE', entityType: 'department' }), async (req, res) => {
   try {
     const { name, description } = req.body;
 
@@ -464,7 +469,7 @@ router.put('/departments/:id', protect, requireRole('super_admin', 'admin'), aud
 });
 
 // Delete department
-router.delete('/departments/:id', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'SETTINGS_DEPARTMENT_DELETE', entityType: 'department' }), async (req, res) => {
+router.delete('/departments/:id', protect, requireActionAccess('settings', 'update'), auditAction({ action: 'SETTINGS_DEPARTMENT_DELETE', entityType: 'department' }), async (req, res) => {
   try {
     const models = getModels();
     const department = await models.Department.findByPk(req.params.id);
@@ -527,7 +532,7 @@ router.get('/registration-code', protect, async (req, res) => {
 });
 
 // Set registration code (ADMIN)
-router.post('/registration-code', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'SETTINGS_REGISTRATION_CODE_UPDATE', entityType: 'setting' }), async (req, res) => {
+router.post('/registration-code', protect, requireActionAccess('settings', 'update'), auditAction({ action: 'SETTINGS_REGISTRATION_CODE_UPDATE', entityType: 'setting' }), async (req, res) => {
   try {
     const { code } = req.body;
     
@@ -620,7 +625,7 @@ router.get('/branding', protect, async (req, res) => {
   }
 });
 
-router.post('/branding', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'SETTINGS_BRANDING_UPDATE', entityType: 'setting' }), async (req, res) => {
+router.post('/branding', protect, requireActionAccess('settings', 'update'), auditAction({ action: 'SETTINGS_BRANDING_UPDATE', entityType: 'setting' }), async (req, res) => {
   try {
     const branding = {
       ...DEFAULT_APP_BRANDING,
@@ -686,7 +691,7 @@ router.get('/registration-consent', protect, async (req, res) => {
   }
 });
 
-router.post('/registration-consent', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'SETTINGS_REGISTRATION_CONSENT_UPDATE', entityType: 'setting' }), async (req, res) => {
+router.post('/registration-consent', protect, requireActionAccess('settings', 'update'), auditAction({ action: 'SETTINGS_REGISTRATION_CONSENT_UPDATE', entityType: 'setting' }), async (req, res) => {
   try {
     const payload = {
       ...DEFAULT_REGISTRATION_CONSENT,
@@ -742,7 +747,7 @@ router.get('/database', protect, async (req, res) => {
   }
 });
 
-router.post('/database', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'SETTINGS_DATABASE_UPDATE', entityType: 'setting' }), async (req, res) => {
+router.post('/database', protect, requireActionAccess('settings', 'update'), auditAction({ action: 'SETTINGS_DATABASE_UPDATE', entityType: 'setting' }), async (req, res) => {
   try {
     const { host, port, database, username, password } = req.body;
 
@@ -790,7 +795,7 @@ router.post('/database', protect, requireRole('super_admin', 'admin'), auditActi
   }
 });
 
-router.post('/database/test', protect, async (req, res) => {
+router.post('/database/test', protect, requireActionAccess('settings', 'test'), async (req, res) => {
   let testSequelize;
 
   try {
@@ -837,7 +842,39 @@ router.post('/database/test', protect, async (req, res) => {
   }
 });
 
-router.get('/audit-logs', protect, async (req, res) => {
+router.get('/alerts', protect, requireActionAccess('settings', 'view'), async (req, res) => {
+  try {
+    const config = await getAlertConfig();
+    res.json(config);
+  } catch (error) {
+    console.error('[Alerts] Error fetching config:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.post('/alerts', protect, requireActionAccess('settings', 'update'), auditAction({ action: 'SETTINGS_ALERTS_UPDATE', entityType: 'setting' }), async (req, res) => {
+  try {
+    const config = await saveAlertConfig(req.body || {});
+    res.json({ success: true, message: 'Alert settings updated successfully', config });
+  } catch (error) {
+    console.error('[Alerts] Error saving config:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.post('/alerts/test', protect, requireActionAccess('settings', 'test'), auditAction({ action: 'SETTINGS_ALERTS_TEST', entityType: 'setting' }), async (req, res) => {
+  try {
+    const config = req.body?.config || await getAlertConfig();
+    const message = String(req.body?.message || '✅ Test alert from MT-API').trim() || '✅ Test alert from MT-API';
+    const result = await sendConfiguredAlert(message, { config });
+    res.json({ success: !!result.success, ...result });
+  } catch (error) {
+    console.error('[Alerts] Error sending test alert:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.get('/audit-logs', protect, requireActionAccess('reports', 'view'), async (req, res) => {
   try {
     const AuditLog = getAuditLog();
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
@@ -881,7 +918,7 @@ router.get('/audit-logs', protect, async (req, res) => {
   }
 });
 
-router.get('/backup/status', protect, async (req, res) => {
+router.get('/backup/status', protect, requireActionAccess('reports', 'view'), async (req, res) => {
   try {
     const status = await getBackupSchedulerStatus();
     res.json(status);
@@ -891,7 +928,7 @@ router.get('/backup/status', protect, async (req, res) => {
   }
 });
 
-router.post('/backup/run', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'SETTINGS_BACKUP_RUN', entityType: 'backup' }), async (req, res) => {
+router.post('/backup/run', protect, requireActionAccess('reports', 'backup'), auditAction({ action: 'SETTINGS_BACKUP_RUN', entityType: 'backup' }), async (req, res) => {
   try {
     const result = await writeAutoBackupFile('manual');
     res.json({
@@ -905,7 +942,7 @@ router.post('/backup/run', protect, requireRole('super_admin', 'admin'), auditAc
   }
 });
 
-router.get('/backup', protect, async (req, res) => {
+router.get('/backup', protect, requireActionAccess('reports', 'view'), async (req, res) => {
   try {
     const backup = await buildBackupPayload();
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -917,7 +954,7 @@ router.get('/backup', protect, async (req, res) => {
   }
 });
 
-router.post('/restore', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'SETTINGS_RESTORE', entityType: 'backup' }), async (req, res) => {
+router.post('/restore', protect, requireActionAccess('reports', 'backup'), auditAction({ action: 'SETTINGS_RESTORE', entityType: 'backup' }), async (req, res) => {
   const sequelize = getSequelize();
   const models = getModels();
   const transaction = await sequelize.transaction();
@@ -954,6 +991,8 @@ router.post('/restore', protect, requireRole('super_admin', 'admin'), auditActio
       ['app_branding', settings.app_branding ? JSON.stringify(settings.app_branding) : null],
       ['mikrotik_config', settings.mikrotik_config ? JSON.stringify(settings.mikrotik_config) : null],
       ['database_config', settings.database_config ? JSON.stringify(settings.database_config) : null],
+      ['dashboard_access_control', settings.dashboard_access_control ? JSON.stringify(settings.dashboard_access_control) : null],
+      ['alert_channels', settings.alert_channels ? JSON.stringify(settings.alert_channels) : null],
     ];
 
     for (const [key, value] of settingEntries) {
@@ -1054,7 +1093,7 @@ router.delete('/access-control/users/:id', protect, requireRole('super_admin'), 
 // ===== MIKROTIK SETTINGS =====
 
 // Get MikroTik configuration (ADMIN)
-router.get('/mikrotik', protect, async (req, res) => {
+router.get('/mikrotik', protect, requireActionAccess('settings', 'view'), async (req, res) => {
   try {
     const config = await getMikrotikConfig();
     
@@ -1067,7 +1106,7 @@ router.get('/mikrotik', protect, async (req, res) => {
 });
 
 // Set MikroTik configuration (ADMIN)
-router.post('/mikrotik', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'SETTINGS_MIKROTIK_UPDATE', entityType: 'setting' }), async (req, res) => {
+router.post('/mikrotik', protect, requireActionAccess('settings', 'update'), auditAction({ action: 'SETTINGS_MIKROTIK_UPDATE', entityType: 'setting' }), async (req, res) => {
   try {
     const { ip, port, username, password, os_version } = req.body;
     
@@ -1143,7 +1182,7 @@ router.post('/mikrotik/test', protect, async (req, res) => {
 });
 
 // Get MikroTik System Status (ADMIN)
-router.get('/mikrotik/status', protect, async (req, res) => {
+router.get('/mikrotik/status', protect, requireActionAccess('settings', 'test'), async (req, res) => {
   try {
     const config = await getMikrotikConfig();
     
@@ -1385,7 +1424,7 @@ router.get('/mikrotik/ip-bindings', protect, async (req, res) => {
   }
 });
 
-router.post('/mikrotik/ip-bindings', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'MIKROTIK_IP_BINDING_CREATE', entityType: 'ip_binding' }), async (req, res) => {
+router.post('/mikrotik/ip-bindings', protect, requireActionAccess('ip-binding', 'manage'), auditAction({ action: 'MIKROTIK_IP_BINDING_CREATE', entityType: 'ip_binding' }), async (req, res) => {
   try {
     const binding = await addIpBinding(req.body || {});
     res.status(201).json({ success: true, message: 'IP Binding created successfully', binding });
@@ -1395,7 +1434,7 @@ router.post('/mikrotik/ip-bindings', protect, requireRole('super_admin', 'admin'
   }
 });
 
-router.put('/mikrotik/ip-bindings/:id', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'MIKROTIK_IP_BINDING_UPDATE', entityType: 'ip_binding' }), async (req, res) => {
+router.put('/mikrotik/ip-bindings/:id', protect, requireActionAccess('ip-binding', 'manage'), auditAction({ action: 'MIKROTIK_IP_BINDING_UPDATE', entityType: 'ip_binding' }), async (req, res) => {
   try {
     const id = decodeURIComponent(req.params.id || '');
     const binding = await updateIpBinding(id, req.body || {});
@@ -1406,7 +1445,7 @@ router.put('/mikrotik/ip-bindings/:id', protect, requireRole('super_admin', 'adm
   }
 });
 
-router.post('/mikrotik/ip-bindings/:id/disable', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'MIKROTIK_IP_BINDING_DISABLE', entityType: 'ip_binding' }), async (req, res) => {
+router.post('/mikrotik/ip-bindings/:id/disable', protect, requireActionAccess('ip-binding', 'manage'), auditAction({ action: 'MIKROTIK_IP_BINDING_DISABLE', entityType: 'ip_binding' }), async (req, res) => {
   try {
     const id = decodeURIComponent(req.params.id || '');
     await disableIpBinding(id);
@@ -1417,7 +1456,7 @@ router.post('/mikrotik/ip-bindings/:id/disable', protect, requireRole('super_adm
   }
 });
 
-router.post('/mikrotik/ip-bindings/:id/enable', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'MIKROTIK_IP_BINDING_ENABLE', entityType: 'ip_binding' }), async (req, res) => {
+router.post('/mikrotik/ip-bindings/:id/enable', protect, requireActionAccess('ip-binding', 'manage'), auditAction({ action: 'MIKROTIK_IP_BINDING_ENABLE', entityType: 'ip_binding' }), async (req, res) => {
   try {
     const id = decodeURIComponent(req.params.id || '');
     await enableIpBinding(id);
@@ -1428,7 +1467,7 @@ router.post('/mikrotik/ip-bindings/:id/enable', protect, requireRole('super_admi
   }
 });
 
-router.delete('/mikrotik/ip-bindings/:id', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'MIKROTIK_IP_BINDING_DELETE', entityType: 'ip_binding' }), async (req, res) => {
+router.delete('/mikrotik/ip-bindings/:id', protect, requireActionAccess('ip-binding', 'manage'), auditAction({ action: 'MIKROTIK_IP_BINDING_DELETE', entityType: 'ip_binding' }), async (req, res) => {
   try {
     const id = decodeURIComponent(req.params.id || '');
     await removeIpBinding(id);
@@ -1463,7 +1502,7 @@ router.get('/mikrotik/walled-garden', protect, async (req, res) => {
   }
 });
 
-router.post('/mikrotik/walled-garden', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'MIKROTIK_WALLED_GARDEN_CREATE', entityType: 'walled_garden' }), async (req, res) => {
+router.post('/mikrotik/walled-garden', protect, requireActionAccess('walled-garden', 'manage'), auditAction({ action: 'MIKROTIK_WALLED_GARDEN_CREATE', entityType: 'walled_garden' }), async (req, res) => {
   try {
     const rule = await addWalledGarden(req.body || {});
     res.status(201).json({ success: true, message: 'Walled Garden rule created successfully', rule });
@@ -1473,7 +1512,7 @@ router.post('/mikrotik/walled-garden', protect, requireRole('super_admin', 'admi
   }
 });
 
-router.put('/mikrotik/walled-garden/:id', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'MIKROTIK_WALLED_GARDEN_UPDATE', entityType: 'walled_garden' }), async (req, res) => {
+router.put('/mikrotik/walled-garden/:id', protect, requireActionAccess('walled-garden', 'manage'), auditAction({ action: 'MIKROTIK_WALLED_GARDEN_UPDATE', entityType: 'walled_garden' }), async (req, res) => {
   try {
     const id = decodeURIComponent(req.params.id || '');
     const rule = await updateWalledGarden(id, req.body || {});
@@ -1484,7 +1523,7 @@ router.put('/mikrotik/walled-garden/:id', protect, requireRole('super_admin', 'a
   }
 });
 
-router.post('/mikrotik/walled-garden/:id/disable', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'MIKROTIK_WALLED_GARDEN_DISABLE', entityType: 'walled_garden' }), async (req, res) => {
+router.post('/mikrotik/walled-garden/:id/disable', protect, requireActionAccess('walled-garden', 'manage'), auditAction({ action: 'MIKROTIK_WALLED_GARDEN_DISABLE', entityType: 'walled_garden' }), async (req, res) => {
   try {
     const id = decodeURIComponent(req.params.id || '');
     await disableWalledGarden(id);
@@ -1495,7 +1534,7 @@ router.post('/mikrotik/walled-garden/:id/disable', protect, requireRole('super_a
   }
 });
 
-router.post('/mikrotik/walled-garden/:id/enable', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'MIKROTIK_WALLED_GARDEN_ENABLE', entityType: 'walled_garden' }), async (req, res) => {
+router.post('/mikrotik/walled-garden/:id/enable', protect, requireActionAccess('walled-garden', 'manage'), auditAction({ action: 'MIKROTIK_WALLED_GARDEN_ENABLE', entityType: 'walled_garden' }), async (req, res) => {
   try {
     const id = decodeURIComponent(req.params.id || '');
     await enableWalledGarden(id);
@@ -1506,7 +1545,7 @@ router.post('/mikrotik/walled-garden/:id/enable', protect, requireRole('super_ad
   }
 });
 
-router.delete('/mikrotik/walled-garden/:id', protect, requireRole('super_admin', 'admin'), auditAction({ action: 'MIKROTIK_WALLED_GARDEN_DELETE', entityType: 'walled_garden' }), async (req, res) => {
+router.delete('/mikrotik/walled-garden/:id', protect, requireActionAccess('walled-garden', 'manage'), auditAction({ action: 'MIKROTIK_WALLED_GARDEN_DELETE', entityType: 'walled_garden' }), async (req, res) => {
   try {
     const id = decodeURIComponent(req.params.id || '');
     await removeWalledGarden(id);

@@ -17,7 +17,7 @@ const DEFAULT_REGISTRATION_CONSENT = {
   accuracyLabel: 'ข้าพเจ้ารับรองว่าข้อมูลที่กรอกเป็นจริงและยินยอมให้ตรวจสอบเพื่ออนุมัติสิทธิ์ใช้งาน',
 };
 
-function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', onLogout, showAlert }) {
+function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', permissions = {}, onLogout, showAlert }) {
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState({ total: 0, pending: 0, approved: 0 });
   const [requests, setRequests] = useState([]);
@@ -61,11 +61,17 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', onL
     passwordLength: 8,
     profile: 'default',
   });
-  const canManageUsers = isAdmin && ['super_admin', 'admin'].includes(userRole);
+  const userActions = permissions?.actions?.users || {};
+  const fallbackManage = isAdmin && ['super_admin', 'admin'].includes(userRole);
+  const canApproveUsers = isAdmin && (userActions.approve ?? fallbackManage);
+  const canEditUsers = isAdmin && (userActions.edit ?? fallbackManage);
+  const canDeleteUsers = isAdmin && (userActions.delete ?? fallbackManage);
+  const canImportUsers = isAdmin && (userActions.import ?? fallbackManage);
+  const canManageUsers = canApproveUsers || canEditUsers || canDeleteUsers || canImportUsers;
 
-  const guardAdminAction = () => {
-    if (canManageUsers) return true;
-    showAlert('สิทธิ์ Viewer ใช้งานได้แบบอ่านอย่างเดียว');
+  const guardAdminAction = (allowed = canManageUsers, message = 'สิทธิ์ของ role นี้ใช้งานได้แบบอ่านอย่างเดียว') => {
+    if (allowed) return true;
+    showAlert(message);
     return false;
   };
 
@@ -211,7 +217,7 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', onL
   };
 
   const handleGenerateBatchUsers = () => {
-    if (!guardAdminAction()) return;
+    if (!guardAdminAction(canImportUsers, 'role นี้ยังไม่สามารถ Generate / Import users ได้')) return;
     const count = Number(generateConfig.count) || 0;
     const usernameLength = Number(generateConfig.usernameLength) || 0;
     const passwordLength = Number(generateConfig.passwordLength) || 0;
@@ -654,7 +660,7 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', onL
   };
 
   const handleApprove = async (id) => {
-    if (!guardAdminAction()) return;
+    if (!guardAdminAction(canApproveUsers, 'role นี้ยังไม่สามารถอนุมัติผู้ใช้ได้')) return;
     console.log('[DEBUG] handleApprove called with id:', id);
     setLoading(true);
     try {
@@ -687,7 +693,7 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', onL
   };
 
   const handleDelete = async (id) => {
-    if (!guardAdminAction()) return;
+    if (!guardAdminAction(canDeleteUsers, 'role นี้ยังไม่สามารถลบผู้ใช้ได้')) return;
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE}/requests/${id}`, {
@@ -732,7 +738,7 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', onL
   };
 
   const handleImportBatchUsers = async (usersToImport = batchUsers) => {
-    if (!guardAdminAction()) return;
+    if (!guardAdminAction(canImportUsers, 'role นี้ยังไม่สามารถ Import users ได้')) return;
     if (!usersToImport.length) {
       showAlert('กรุณาเลือกไฟล์ .bat/.csv หรือกด generate ผู้ใช้ก่อน');
       return;
@@ -890,7 +896,7 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', onL
   };
 
   const handleToggleUserStatus = async (id, action) => {
-    if (!guardAdminAction()) return;
+    if (!guardAdminAction(canEditUsers, 'role นี้ยังไม่สามารถเปิด/ปิดสถานะ user ได้')) return;
     const isDisable = action === 'disable';
     const confirmMessage = isDisable
       ? 'ต้องการปิดการใช้งาน user นี้หรือไม่?'
@@ -929,7 +935,7 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', onL
   };
 
   const handleSaveEdit = async () => {
-    if (!guardAdminAction()) return;
+    if (!guardAdminAction(canEditUsers, 'role นี้ยังไม่สามารถแก้ไขผู้ใช้ได้')) return;
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE}/requests/${editId}`, {
@@ -957,7 +963,7 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', onL
   };
 
   const handleCancelApproval = async (id) => {
-    if (!guardAdminAction()) return;
+    if (!guardAdminAction(canApproveUsers, 'role นี้ยังไม่สามารถยกเลิกการอนุมัติได้')) return;
     if (!window.confirm('คุณแน่ใจหรือว่าต้องการยกเลิกการอนุมัติ?')) return;
     
     setLoading(true);

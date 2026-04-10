@@ -58,6 +58,38 @@ exports.requireSectionAccess = (sectionKey) => async (req, res, next) => {
   }
 };
 
+exports.requireActionAccess = (sectionKey, actionKey = 'view') => async (req, res, next) => {
+  try {
+    const role = req.user?.role || req.admin?.role || 'guest';
+    const permissions = await resolvePermissions(req);
+
+    if (role === 'super_admin') {
+      return next();
+    }
+
+    if (!permissions?.[sectionKey]) {
+      return res.status(403).json({
+        message: `Forbidden: no access to section '${sectionKey}'`,
+      });
+    }
+
+    const sectionActions = permissions?.actions?.[sectionKey] || {};
+    const allowed = Object.prototype.hasOwnProperty.call(sectionActions, actionKey)
+      ? !!sectionActions[actionKey]
+      : !!permissions?.[sectionKey];
+
+    if (allowed) {
+      return next();
+    }
+
+    return res.status(403).json({
+      message: `Forbidden: action '${actionKey}' is not allowed for section '${sectionKey}'`,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message || 'Permission check failed' });
+  }
+};
+
 exports.requireAnySectionAccess = (...sectionKeys) => async (req, res, next) => {
   try {
     const role = req.user?.role || req.admin?.role || 'guest';

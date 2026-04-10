@@ -1,0 +1,20 @@
+# MT-API temporary HTTP-only Nginx config
+# Use this before issuing the first SSL certificate, then switch to
+# `mt-api.production.conf.example` after Certbot completes.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name your-domain.com www.your-domain.com;
+
+    client_max_body_size 20m;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

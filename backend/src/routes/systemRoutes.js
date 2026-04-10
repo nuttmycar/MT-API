@@ -1,8 +1,9 @@
 const express = require('express');
 const { getSystemStats, getSystemQuickInfo } = require('../utils/systemInfo');
-const { protect, requireAnySectionAccess, requireSectionAccess } = require('../middleware/authMiddleware');
+const { protect, requireAnySectionAccess, requireActionAccess } = require('../middleware/authMiddleware');
 const { getUserRequest } = require('../models/UserRequest');
 const { getBackupSchedulerStatus } = require('../utils/backupService');
+const { maybeDispatchSystemAlerts } = require('../utils/alertService');
 
 const router = express.Router();
 
@@ -10,7 +11,7 @@ const router = express.Router();
  * GET /api/system/stats
  * Get full system statistics
  */
-router.get('/stats', protect, requireSectionAccess('system'), async (req, res, next) => {
+router.get('/stats', protect, requireActionAccess('system', 'view'), async (req, res, next) => {
   try {
     const includeProcesses = req.query.includeProcesses === 'true';
     const forceRefresh = req.query.refresh === 'true';
@@ -28,7 +29,7 @@ router.get('/stats', protect, requireSectionAccess('system'), async (req, res, n
  * GET /api/system/quick
  * Get quick system overview (CPU, RAM, Uptime only)
  */
-router.get('/quick', protect, requireSectionAccess('system'), async (req, res, next) => {
+router.get('/quick', protect, requireActionAccess('system', 'view'), async (req, res, next) => {
   try {
     console.log('[SystemAPI] Fetching quick system info...');
     const info = await getSystemQuickInfo();
@@ -92,7 +93,15 @@ router.get('/notifications', protect, requireAnySectionAccess('system', 'reports
       });
     }
 
-    return res.json({ notifications, backupStatus, quick });
+    let alertDispatch = { sent: false, skipped: true, reason: 'Not evaluated' };
+    try {
+      alertDispatch = await maybeDispatchSystemAlerts({ notifications, pendingApprovals, quick });
+    } catch (dispatchError) {
+      console.error('[SystemAPI] Alert dispatch error:', dispatchError.message);
+      alertDispatch = { sent: false, skipped: true, reason: dispatchError.message };
+    }
+
+    return res.json({ notifications, backupStatus, quick, alertDispatch });
   } catch (error) {
     console.error('[SystemAPI] Notifications error:', error);
     next(error);

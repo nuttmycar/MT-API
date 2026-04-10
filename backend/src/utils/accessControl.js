@@ -14,6 +14,53 @@ const MENU_DEFINITIONS = [
   { key: 'access-control', label: 'Role & Permission' },
 ];
 
+const ACTION_DEFINITIONS = {
+  users: [
+    { key: 'view', label: 'View' },
+    { key: 'approve', label: 'Approve' },
+    { key: 'edit', label: 'Edit' },
+    { key: 'delete', label: 'Delete' },
+    { key: 'import', label: 'Import / Generate' },
+  ],
+  system: [
+    { key: 'view', label: 'View' },
+  ],
+  reports: [
+    { key: 'view', label: 'View' },
+    { key: 'export', label: 'Export' },
+    { key: 'backup', label: 'Backup / Restore' },
+  ],
+  mikrotik: [
+    { key: 'view', label: 'View' },
+    { key: 'manage', label: 'Manage' },
+  ],
+  'ip-binding': [
+    { key: 'view', label: 'View' },
+    { key: 'manage', label: 'Manage' },
+  ],
+  'walled-garden': [
+    { key: 'view', label: 'View' },
+    { key: 'manage', label: 'Manage' },
+  ],
+  settings: [
+    { key: 'view', label: 'View' },
+    { key: 'update', label: 'Update' },
+    { key: 'test', label: 'Test / Notify' },
+  ],
+  'access-control': [
+    { key: 'view', label: 'View' },
+    { key: 'roles', label: 'Manage Roles' },
+    { key: 'users', label: 'Manage Users' },
+    { key: 'history', label: 'View Login History' },
+  ],
+};
+
+const ACTION_DEFINITION_LIST = MENU_DEFINITIONS.map((section) => ({
+  sectionKey: section.key,
+  sectionLabel: section.label,
+  actions: ACTION_DEFINITIONS[section.key] || [],
+}));
+
 const MENU_KEYS = MENU_DEFINITIONS.map((item) => item.key);
 const SYSTEM_ROLE_ORDER = ['super_admin', 'admin', 'viewer'];
 const SYSTEM_ROLE_LABELS = {
@@ -31,7 +78,7 @@ const normalizeRoleKey = (value = '') => String(value || '')
 
 const generateId = (prefix = 'item') => `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
-const buildPermissionMap = (roleKey = '', providedPermissions = {}) => {
+const getDefaultSectionPermissions = (roleKey = '') => {
   const key = normalizeRoleKey(roleKey);
   const defaults = MENU_KEYS.reduce((acc, item) => {
     acc[item] = false;
@@ -52,13 +99,61 @@ const buildPermissionMap = (roleKey = '', providedPermissions = {}) => {
     });
   }
 
+  return defaults;
+};
+
+const buildActionPermissionMap = (roleKey = '', providedActions = {}, sectionPermissions = {}) => {
+  const key = normalizeRoleKey(roleKey);
+
+  return MENU_KEYS.reduce((acc, sectionKey) => {
+    const actions = ACTION_DEFINITIONS[sectionKey] || [];
+    const overrides = providedActions?.[sectionKey] || {};
+
+    acc[sectionKey] = actions.reduce((actionAcc, action) => {
+      let allowed = false;
+
+      if (key === 'super_admin') {
+        allowed = true;
+      } else if (key === 'admin') {
+        allowed = !!sectionPermissions[sectionKey] && sectionKey !== 'access-control';
+      } else if (key === 'viewer') {
+        allowed = !!sectionPermissions[sectionKey] && action.key === 'view';
+      } else {
+        allowed = !!sectionPermissions[sectionKey] && action.key === 'view';
+      }
+
+      if (Object.prototype.hasOwnProperty.call(overrides, action.key)) {
+        allowed = key === 'super_admin' ? true : !!overrides[action.key];
+      }
+
+      if (!sectionPermissions[sectionKey] && key !== 'super_admin') {
+        allowed = false;
+      }
+
+      actionAcc[action.key] = allowed;
+      return actionAcc;
+    }, {});
+
+    return acc;
+  }, {});
+};
+
+const buildPermissionMap = (roleKey = '', providedPermissions = {}) => {
+  const key = normalizeRoleKey(roleKey);
+  const defaults = getDefaultSectionPermissions(key);
+  const providedActions = providedPermissions?.actions || providedPermissions?.actionPermissions || {};
+
   const permissions = MENU_KEYS.reduce((acc, item) => {
+    const hasAnyActionEnabled = Object.values(providedActions?.[item] || {}).some(Boolean);
+    const sectionValue = providedPermissions?.[item];
+
     acc[item] = key === 'super_admin'
       ? true
-      : (providedPermissions?.[item] ?? defaults[item] ?? false);
+      : (typeof sectionValue === 'boolean' ? sectionValue : (hasAnyActionEnabled || defaults[item] || false));
     return acc;
   }, {});
 
+  permissions.actions = buildActionPermissionMap(key, providedActions, permissions);
   return permissions;
 };
 
@@ -89,10 +184,14 @@ const mergeRoles = (roles = []) => {
       ? {
           ...current,
           ...normalized,
-          permissions: {
+          permissions: buildPermissionMap(normalized.key, {
             ...current.permissions,
             ...normalized.permissions,
-          },
+            actions: {
+              ...(current.permissions?.actions || {}),
+              ...(normalized.permissions?.actions || {}),
+            },
+          }),
         }
       : normalized);
   });
@@ -127,6 +226,7 @@ const sanitizeStoredUser = (user = {}, roles = []) => {
 
 const getDefaultConfig = () => ({
   menuDefinitions: MENU_DEFINITIONS,
+  actionDefinitions: ACTION_DEFINITION_LIST,
   roles: mergeRoles([]),
   users: [],
 });
@@ -160,6 +260,7 @@ const getAccessControlConfig = async () => {
 
     return {
       menuDefinitions: MENU_DEFINITIONS,
+      actionDefinitions: ACTION_DEFINITION_LIST,
       roles,
       users,
     };
@@ -192,6 +293,7 @@ const saveAccessControlConfig = async (payload = {}) => {
 
   return {
     menuDefinitions: MENU_DEFINITIONS,
+    actionDefinitions: ACTION_DEFINITION_LIST,
     roles,
     users,
   };
@@ -210,6 +312,11 @@ const getPermissionsForRole = (roleKey = '', config = null) => {
   return matched?.permissions || buildPermissionMap(normalized);
 };
 
+const getActionPermissionsForRole = (roleKey = '', config = null) => {
+  const permissions = getPermissionsForRole(roleKey, config);
+  return permissions?.actions || buildPermissionMap(roleKey).actions;
+};
+
 const hasSectionAccess = async (roleKey = '', sectionKey = '') => {
   const normalizedRole = normalizeRoleKey(roleKey) || 'viewer';
   if (normalizedRole === 'super_admin') {
@@ -219,6 +326,26 @@ const hasSectionAccess = async (roleKey = '', sectionKey = '') => {
   const config = await getAccessControlConfig();
   const permissions = getPermissionsForRole(normalizedRole, config);
   return !!permissions[sectionKey];
+};
+
+const hasActionAccess = async (roleKey = '', sectionKey = '', actionKey = 'view') => {
+  const normalizedRole = normalizeRoleKey(roleKey) || 'viewer';
+  if (normalizedRole === 'super_admin') {
+    return true;
+  }
+
+  const config = await getAccessControlConfig();
+  const permissions = getPermissionsForRole(normalizedRole, config);
+  if (!permissions?.[sectionKey]) {
+    return false;
+  }
+
+  const sectionActions = permissions?.actions?.[sectionKey] || {};
+  if (!Object.prototype.hasOwnProperty.call(sectionActions, actionKey)) {
+    return !!permissions?.[sectionKey];
+  }
+
+  return !!sectionActions[actionKey];
 };
 
 const getEnvAccounts = (config = null) => [
@@ -291,6 +418,7 @@ const getAccessControlOverview = async () => {
 
   return {
     menuDefinitions: MENU_DEFINITIONS,
+    actionDefinitions: ACTION_DEFINITION_LIST,
     roles: config.roles,
     users: [...envAccounts, ...managedUsers],
   };
@@ -387,12 +515,16 @@ module.exports = {
   ACCESS_CONTROL_SETTING_KEY,
   MENU_DEFINITIONS,
   MENU_KEYS,
+  ACTION_DEFINITIONS,
+  ACTION_DEFINITION_LIST,
   getAccessControlConfig,
   getAccessControlOverview,
   getAvailableAccounts,
   getPermissionsForRole,
+  getActionPermissionsForRole,
   getRoleLabel,
   hasSectionAccess,
+  hasActionAccess,
   normalizeRoleKey,
   saveRoleDefinitions,
   addManagedUser,

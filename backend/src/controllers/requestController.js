@@ -265,12 +265,54 @@ exports.getDailySummary = async (req, res, next) => {
 
     const todayRequests = dailyMap.get(todayKey) || { total: 0, approved: 0, pending: 0 };
     const latestRequest = requests[0];
+    const approvedCount = requests.filter((item) => item.status === 'approved').length;
+    const pendingCount = requests.filter((item) => item.status === 'pending').length;
+    const periodDays = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1);
+
+    const previousEnd = new Date(startDate);
+    previousEnd.setDate(previousEnd.getDate() - 1);
+    previousEnd.setHours(23, 59, 59, 999);
+
+    const previousStart = new Date(previousEnd);
+    previousStart.setDate(previousStart.getDate() - (periodDays - 1));
+    previousStart.setHours(0, 0, 0, 0);
+
+    const previousWhere = buildRequestWhereClause({
+      ...req.query,
+      from: previousStart.toISOString().slice(0, 10),
+      to: previousEnd.toISOString().slice(0, 10),
+    });
+
+    const previousRequests = await UserRequest.findAll({ where: previousWhere });
+    const previousApprovedCount = previousRequests.filter((item) => item.status === 'approved').length;
+    const previousPendingCount = previousRequests.filter((item) => item.status === 'pending').length;
+
+    const departmentMap = requests.reduce((acc, item) => {
+      const key = String(item.department || 'Unknown').trim() || 'Unknown';
+      acc.set(key, (acc.get(key) || 0) + 1);
+      return acc;
+    }, new Map());
+
+    const topDepartments = Array.from(departmentMap.entries())
+      .map(([department, total]) => ({ department, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+
+    const dailyItems = Array.from(dailyMap.values());
+    const peakDay = dailyItems.reduce((best, current) => (
+      !best || (current.total || 0) > (best.total || 0) ? current : best
+    ), null);
+
+    const calcChange = (current, previous) => {
+      if (!previous) return current > 0 ? 100 : 0;
+      return Number((((current - previous) / previous) * 100).toFixed(1));
+    };
 
     return res.json({
       summary: {
         totalRequests: requests.length,
-        approvedCount: requests.filter((item) => item.status === 'approved').length,
-        pendingCount: requests.filter((item) => item.status === 'pending').length,
+        approvedCount,
+        pendingCount,
         todayRegistrations: todayRequests.total,
         approvedToday: todayRequests.approved,
         pendingToday: todayRequests.pending,
@@ -280,8 +322,31 @@ exports.getDailySummary = async (req, res, next) => {
           from: startDate.toISOString().slice(0, 10),
           to: endDate.toISOString().slice(0, 10),
         },
+        trendAnalytics: {
+          periodDays,
+          approvalRate: requests.length ? Number(((approvedCount / requests.length) * 100).toFixed(1)) : 0,
+          pendingRate: requests.length ? Number(((pendingCount / requests.length) * 100).toFixed(1)) : 0,
+          dailyAverage: Number((requests.length / periodDays).toFixed(1)),
+          peakDay: peakDay?.date || null,
+          peakRegistrations: peakDay?.total || 0,
+          previousPeriod: {
+            totalRequests: previousRequests.length,
+            approvedCount: previousApprovedCount,
+            pendingCount: previousPendingCount,
+            range: {
+              from: previousStart.toISOString().slice(0, 10),
+              to: previousEnd.toISOString().slice(0, 10),
+            },
+          },
+          changePercent: {
+            requests: calcChange(requests.length, previousRequests.length),
+            approved: calcChange(approvedCount, previousApprovedCount),
+            pending: calcChange(pendingCount, previousPendingCount),
+          },
+          topDepartments,
+        },
       },
-      daily: Array.from(dailyMap.values()),
+      daily: dailyItems,
     });
   } catch (error) {
     next(error);

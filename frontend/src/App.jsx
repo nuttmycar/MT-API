@@ -18,47 +18,110 @@ const DEFAULT_APP_BRANDING = {
   faviconUrl: '',
 };
 
-const getDefaultPermissionsForRole = (role = 'guest') => ({
-  super_admin: {
-    users: true,
-    system: true,
-    reports: true,
-    mikrotik: true,
-    'ip-binding': true,
-    'walled-garden': true,
-    settings: true,
-    'access-control': true,
-  },
-  admin: {
-    users: true,
-    system: true,
-    reports: true,
-    mikrotik: true,
-    'ip-binding': true,
-    'walled-garden': true,
-    settings: true,
-    'access-control': false,
-  },
-  viewer: {
-    users: true,
-    system: true,
+const getDefaultPermissionsForRole = (role = 'guest') => {
+  const sectionPermissions = ({
+    super_admin: {
+      users: true,
+      system: true,
+      reports: true,
+      mikrotik: true,
+      'ip-binding': true,
+      'walled-garden': true,
+      settings: true,
+      'access-control': true,
+    },
+    admin: {
+      users: true,
+      system: true,
+      reports: true,
+      mikrotik: true,
+      'ip-binding': true,
+      'walled-garden': true,
+      settings: true,
+      'access-control': false,
+    },
+    viewer: {
+      users: true,
+      system: true,
+      reports: true,
+      mikrotik: false,
+      'ip-binding': false,
+      'walled-garden': false,
+      settings: false,
+      'access-control': false,
+    },
+  }[role] || {
+    users: false,
+    system: false,
     reports: true,
     mikrotik: false,
     'ip-binding': false,
     'walled-garden': false,
     settings: false,
     'access-control': false,
-  },
-}[role] || {
-  users: false,
-  system: false,
-  reports: true,
-  mikrotik: false,
-  'ip-binding': false,
-  'walled-garden': false,
-  settings: false,
-  'access-control': false,
-});
+  });
+
+  const allowAdminManage = role === 'super_admin' || role === 'admin';
+
+  return {
+    ...sectionPermissions,
+    actions: {
+      users: {
+        view: !!sectionPermissions.users,
+        approve: allowAdminManage,
+        edit: allowAdminManage,
+        delete: allowAdminManage,
+        import: allowAdminManage,
+      },
+      system: {
+        view: !!sectionPermissions.system,
+      },
+      reports: {
+        view: !!sectionPermissions.reports,
+        export: allowAdminManage,
+        backup: allowAdminManage,
+      },
+      mikrotik: {
+        view: !!sectionPermissions.mikrotik,
+        manage: allowAdminManage && !!sectionPermissions.mikrotik,
+      },
+      'ip-binding': {
+        view: !!sectionPermissions['ip-binding'],
+        manage: allowAdminManage && !!sectionPermissions['ip-binding'],
+      },
+      'walled-garden': {
+        view: !!sectionPermissions['walled-garden'],
+        manage: allowAdminManage && !!sectionPermissions['walled-garden'],
+      },
+      settings: {
+        view: !!sectionPermissions.settings,
+        update: allowAdminManage && !!sectionPermissions.settings,
+        test: allowAdminManage && !!sectionPermissions.settings,
+      },
+      'access-control': {
+        view: role === 'super_admin',
+        roles: role === 'super_admin',
+        users: role === 'super_admin',
+        history: role === 'super_admin',
+      },
+    },
+  };
+};
+
+const normalizePermissions = (permissions = {}, role = 'guest') => {
+  const defaults = getDefaultPermissionsForRole(role);
+  const sections = ['users', 'system', 'reports', 'mikrotik', 'ip-binding', 'walled-garden', 'settings', 'access-control'];
+
+  return sections.reduce((acc, sectionKey) => {
+    acc[sectionKey] = typeof permissions?.[sectionKey] === 'boolean' ? permissions[sectionKey] : defaults[sectionKey];
+    acc.actions = acc.actions || {};
+    acc.actions[sectionKey] = {
+      ...(defaults.actions?.[sectionKey] || {}),
+      ...(permissions?.actions?.[sectionKey] || {}),
+    };
+    return acc;
+  }, { ...defaults, ...permissions, actions: {} });
+};
 
 const decodeStoredAuth = (storedToken) => {
   if (!storedToken) {
@@ -75,14 +138,14 @@ const decodeStoredAuth = (storedToken) => {
 
     return {
       role,
-      permissions: payload?.permissions || (storedPermissions ? JSON.parse(storedPermissions) : getDefaultPermissionsForRole(role)),
+      permissions: normalizePermissions(payload?.permissions || (storedPermissions ? JSON.parse(storedPermissions) : getDefaultPermissionsForRole(role)), role),
     };
   } catch (error) {
     const role = localStorage.getItem('mt_api_role') || 'guest';
     const storedPermissions = localStorage.getItem('mt_api_permissions');
     return {
       role,
-      permissions: storedPermissions ? JSON.parse(storedPermissions) : getDefaultPermissionsForRole(role),
+      permissions: normalizePermissions(storedPermissions ? JSON.parse(storedPermissions) : getDefaultPermissionsForRole(role), role),
     };
   }
 };
@@ -150,7 +213,7 @@ function App() {
         const result = await response.json();
         if (response.ok) {
           const nextRole = result.role || 'guest';
-          const nextPermissions = result.permissions || getDefaultPermissionsForRole(nextRole);
+          const nextPermissions = normalizePermissions(result.permissions || getDefaultPermissionsForRole(nextRole), nextRole);
           setUserRole(nextRole);
           setMenuPermissions(nextPermissions);
           localStorage.setItem('mt_api_role', nextRole);
@@ -475,6 +538,7 @@ function App() {
                 token={token}
                 isAdmin={isAdmin}
                 userRole={userRole}
+                permissions={menuPermissions}
                 onLogout={handleLogout}
                 showAlert={showAlert}
               />
@@ -485,15 +549,15 @@ function App() {
             )}
 
             {activeSection === 'settings' && (
-              <Settings token={token} showAlert={showAlert} userRole={userRole} onBrandingChange={setBranding} />
+              <Settings token={token} showAlert={showAlert} userRole={userRole} permissions={menuPermissions} onBrandingChange={setBranding} />
             )}
 
             {activeSection === 'access-control' && (
-              <AccessControlManager token={token} showAlert={showAlert} userRole={userRole} />
+              <AccessControlManager token={token} showAlert={showAlert} userRole={userRole} permissions={menuPermissions} />
             )}
 
             {activeSection === 'reports' && (
-              <ReportsCenter token={token} showAlert={showAlert} userRole={userRole} />
+              <ReportsCenter token={token} showAlert={showAlert} userRole={userRole} permissions={menuPermissions} />
             )}
 
             {(activeSection === 'mikrotik' || activeSection === 'ip-binding' || activeSection === 'walled-garden') && (

@@ -28,7 +28,30 @@ const DEFAULT_APP_BRANDING = {
   faviconUrl: '',
 };
 
-export default function Settings({ token, showAlert, onBrandingChange }) {
+const DEFAULT_ALERT_CONFIG = {
+  enabled: false,
+  coolDownMinutes: 15,
+  triggers: {
+    pendingApprovals: true,
+    pendingThreshold: 5,
+    cpuHigh: true,
+    cpuThreshold: 85,
+    backupError: true,
+  },
+  channels: {
+    line: {
+      enabled: false,
+      token: '',
+    },
+    telegram: {
+      enabled: false,
+      botToken: '',
+      chatId: '',
+    },
+  },
+};
+
+export default function Settings({ token, showAlert, onBrandingChange, permissions = {} }) {
   const [positions, setPositions] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -77,6 +100,15 @@ export default function Settings({ token, showAlert, onBrandingChange }) {
   });
   const [mikrotikLoading, setMikrotikLoading] = useState(false);
   const [mikrotikStatus, setMikrotikStatus] = useState(null);
+  const [alertConfig, setAlertConfig] = useState(DEFAULT_ALERT_CONFIG);
+  const [alertLoading, setAlertLoading] = useState(false);
+  const [alertTestLoading, setAlertTestLoading] = useState(false);
+  const [alertTestResult, setAlertTestResult] = useState(null);
+
+  const settingsActions = permissions?.actions?.settings || {};
+  const hasSettingsSection = typeof permissions?.settings === 'boolean' ? permissions.settings : true;
+  const canUpdateSettings = hasSettingsSection && (settingsActions.update ?? true);
+  const canTestSettings = hasSettingsSection && (settingsActions.test ?? canUpdateSettings);
 
   useEffect(() => {
     fetchPositions();
@@ -87,6 +119,7 @@ export default function Settings({ token, showAlert, onBrandingChange }) {
     fetchDatabaseConfig();
     fetchDailySummary();
     fetchMikrotikConfig();
+    fetchAlertConfig();
   }, []);
 
   const downloadFile = (content, fileName, mimeType) => {
@@ -199,6 +232,101 @@ export default function Settings({ token, showAlert, onBrandingChange }) {
       }
     } catch (error) {
       console.error('[Settings] Error fetching daily summary:', error);
+    }
+  };
+
+  const fetchAlertConfig = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/settings/alerts`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setAlertConfig({
+          ...DEFAULT_ALERT_CONFIG,
+          ...data,
+          triggers: { ...DEFAULT_ALERT_CONFIG.triggers, ...(data.triggers || {}) },
+          channels: {
+            line: { ...DEFAULT_ALERT_CONFIG.channels.line, ...(data.channels?.line || {}) },
+            telegram: { ...DEFAULT_ALERT_CONFIG.channels.telegram, ...(data.channels?.telegram || {}) },
+          },
+        });
+      }
+    } catch (error) {
+      console.error('[Settings] Error fetching alert config:', error);
+    }
+  };
+
+  const handleSaveAlertConfig = async (event) => {
+    event.preventDefault();
+
+    if (!canUpdateSettings) {
+      showAlert('สิทธิ์ของ role นี้ยังไม่สามารถแก้ไข Alert Settings ได้');
+      return;
+    }
+
+    setAlertLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/settings/alerts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(alertConfig),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Failed to save alert settings');
+
+      setAlertConfig({
+        ...DEFAULT_ALERT_CONFIG,
+        ...(data.config || alertConfig),
+        triggers: { ...DEFAULT_ALERT_CONFIG.triggers, ...((data.config || alertConfig).triggers || {}) },
+        channels: {
+          line: { ...DEFAULT_ALERT_CONFIG.channels.line, ...((data.config || alertConfig).channels?.line || {}) },
+          telegram: { ...DEFAULT_ALERT_CONFIG.channels.telegram, ...((data.config || alertConfig).channels?.telegram || {}) },
+        },
+      });
+      showAlert('✓ บันทึกการตั้งค่า LINE/Telegram alerts แล้ว');
+    } catch (error) {
+      showAlert(error.message);
+    } finally {
+      setAlertLoading(false);
+    }
+  };
+
+  const handleSendAlertTest = async () => {
+    if (!canTestSettings) {
+      showAlert('สิทธิ์ของ role นี้ยังไม่สามารถทดสอบ Alert ได้');
+      return;
+    }
+
+    setAlertTestLoading(true);
+    setAlertTestResult(null);
+    try {
+      const response = await fetch(`${API_BASE}/settings/alerts/test`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          message: `✅ MT-API test alert @ ${new Date().toLocaleString('th-TH')}`,
+          config: alertConfig,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Failed to send test alert');
+
+      setAlertTestResult(data);
+      showAlert(data.success ? '✓ ส่ง Test Alert แล้ว' : 'ℹ️ ยังไม่ได้ส่งจริง กรุณาตรวจสอบ token/chat id');
+    } catch (error) {
+      showAlert(error.message);
+      setAlertTestResult({ success: false, message: error.message });
+    } finally {
+      setAlertTestLoading(false);
     }
   };
 
@@ -935,6 +1063,201 @@ export default function Settings({ token, showAlert, onBrandingChange }) {
               <p className="mt-1">{databaseStatus.message}</p>
               {databaseStatus.info && (
                 <p className="mt-2 text-xs">{databaseStatus.info.host}:{databaseStatus.info.port} / {databaseStatus.info.database}</p>
+              )}
+            </div>
+          )}
+        </form>
+      </div>
+
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-black">🔔 LINE / Telegram Alerts</h2>
+            <p className="mt-1 text-sm text-gray-500">ตั้งค่าการแจ้งเตือนอัตโนมัติเมื่อมี pending approvals, CPU สูง หรือ backup error</p>
+          </div>
+          <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900 ring-1 ring-emerald-200">
+            รองรับทั้ง <span className="font-semibold">LINE Notify</span> และ <span className="font-semibold">Telegram Bot</span>
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveAlertConfig} className="space-y-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={alertConfig.enabled}
+                onChange={(e) => setAlertConfig((prev) => ({ ...prev, enabled: e.target.checked }))}
+              />
+              เปิดใช้งานระบบ Smart Alerts
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-gray-700">Cooldown (minutes)</span>
+              <input
+                type="number"
+                min="1"
+                value={alertConfig.coolDownMinutes}
+                onChange={(e) => setAlertConfig((prev) => ({ ...prev, coolDownMinutes: parseInt(e.target.value, 10) || 15 }))}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-black bg-white outline-none focus:border-blue-500"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div className="rounded-2xl border border-dashed border-green-300 bg-green-50 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-green-950">LINE</h3>
+                <label className="flex items-center gap-2 text-sm text-green-900">
+                  <input
+                    type="checkbox"
+                    checked={alertConfig.channels.line.enabled}
+                    onChange={(e) => setAlertConfig((prev) => ({
+                      ...prev,
+                      channels: { ...prev.channels, line: { ...prev.channels.line, enabled: e.target.checked } },
+                    }))}
+                  />
+                  Enable
+                </label>
+              </div>
+              <label className="space-y-2 block">
+                <span className="text-sm font-medium text-gray-700">LINE Token</span>
+                <input
+                  type="password"
+                  value={alertConfig.channels.line.token}
+                  onChange={(e) => setAlertConfig((prev) => ({
+                    ...prev,
+                    channels: { ...prev.channels, line: { ...prev.channels.line, token: e.target.value } },
+                  }))}
+                  placeholder="LINE Notify token"
+                  className="w-full rounded-lg border border-gray-300 px-4 py-2 text-black bg-white outline-none focus:border-blue-500"
+                />
+              </label>
+            </div>
+
+            <div className="rounded-2xl border border-dashed border-sky-300 bg-sky-50 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-sky-950">Telegram</h3>
+                <label className="flex items-center gap-2 text-sm text-sky-900">
+                  <input
+                    type="checkbox"
+                    checked={alertConfig.channels.telegram.enabled}
+                    onChange={(e) => setAlertConfig((prev) => ({
+                      ...prev,
+                      channels: { ...prev.channels, telegram: { ...prev.channels.telegram, enabled: e.target.checked } },
+                    }))}
+                  />
+                  Enable
+                </label>
+              </div>
+              <div className="grid gap-3">
+                <label className="space-y-2 block">
+                  <span className="text-sm font-medium text-gray-700">Bot Token</span>
+                  <input
+                    type="password"
+                    value={alertConfig.channels.telegram.botToken}
+                    onChange={(e) => setAlertConfig((prev) => ({
+                      ...prev,
+                      channels: { ...prev.channels, telegram: { ...prev.channels.telegram, botToken: e.target.value } },
+                    }))}
+                    placeholder="123456:ABC..."
+                    className="w-full rounded-lg border border-gray-300 px-4 py-2 text-black bg-white outline-none focus:border-blue-500"
+                  />
+                </label>
+                <label className="space-y-2 block">
+                  <span className="text-sm font-medium text-gray-700">Chat ID</span>
+                  <input
+                    type="text"
+                    value={alertConfig.channels.telegram.chatId}
+                    onChange={(e) => setAlertConfig((prev) => ({
+                      ...prev,
+                      channels: { ...prev.channels, telegram: { ...prev.channels.telegram, chatId: e.target.value } },
+                    }))}
+                    placeholder="เช่น -1001234567890"
+                    className="w-full rounded-lg border border-gray-300 px-4 py-2 text-black bg-white outline-none focus:border-blue-500"
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={alertConfig.triggers.pendingApprovals}
+                onChange={(e) => setAlertConfig((prev) => ({ ...prev, triggers: { ...prev.triggers, pendingApprovals: e.target.checked } }))}
+              />
+              Pending approvals
+            </label>
+            <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={alertConfig.triggers.cpuHigh}
+                onChange={(e) => setAlertConfig((prev) => ({ ...prev, triggers: { ...prev.triggers, cpuHigh: e.target.checked } }))}
+              />
+              CPU สูง
+            </label>
+            <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={alertConfig.triggers.backupError}
+                onChange={(e) => setAlertConfig((prev) => ({ ...prev, triggers: { ...prev.triggers, backupError: e.target.checked } }))}
+              />
+              Backup error
+            </label>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-gray-700">Pending threshold</span>
+              <input
+                type="number"
+                min="1"
+                value={alertConfig.triggers.pendingThreshold}
+                onChange={(e) => setAlertConfig((prev) => ({ ...prev, triggers: { ...prev.triggers, pendingThreshold: parseInt(e.target.value, 10) || 5 } }))}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-black bg-white outline-none focus:border-blue-500"
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-gray-700">CPU threshold (%)</span>
+              <input
+                type="number"
+                min="1"
+                max="100"
+                value={alertConfig.triggers.cpuThreshold}
+                onChange={(e) => setAlertConfig((prev) => ({ ...prev, triggers: { ...prev.triggers, cpuThreshold: parseInt(e.target.value, 10) || 85 } }))}
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-black bg-white outline-none focus:border-blue-500"
+              />
+            </label>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button
+              type="submit"
+              disabled={alertLoading || !canUpdateSettings}
+              className="flex-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-400 text-white font-semibold py-3 transition"
+            >
+              {alertLoading ? 'กำลังบันทึก...' : '💾 บันทึก Alert Settings'}
+            </button>
+            <button
+              type="button"
+              onClick={handleSendAlertTest}
+              disabled={alertTestLoading || !canTestSettings}
+              className="flex-1 rounded-lg bg-sky-600 hover:bg-sky-700 disabled:bg-gray-400 text-white font-semibold py-3 transition"
+            >
+              {alertTestLoading ? 'กำลังส่ง...' : '📨 ส่ง Test Alert'}
+            </button>
+          </div>
+
+          {alertTestResult && (
+            <div className={`rounded-lg border p-4 text-sm ${alertTestResult.success ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+              <p className="font-semibold">ผลการทดสอบ Alert</p>
+              <p className="mt-1">{alertTestResult.reason || alertTestResult.message || (alertTestResult.success ? 'ส่งสำเร็จ' : 'ยังไม่สำเร็จ')}</p>
+              {Array.isArray(alertTestResult.results) && alertTestResult.results.length > 0 && (
+                <div className="mt-2 space-y-1 text-xs">
+                  {alertTestResult.results.map((item) => (
+                    <div key={item.channel}>• {item.channel}: {item.success ? 'success' : (item.reason || item.message || 'failed')}</div>
+                  ))}
+                </div>
               )}
             </div>
           )}

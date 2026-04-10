@@ -1,380 +1,466 @@
-# 🎉 ฟีเจอร์ใหม่ที่เพิ่มเข้ามา
+# ✅ MT-API — สรุปฟีเจอร์ปัจจุบัน (อัปเดตล่าสุด)
 
-## 📋 สารบัญ
-1. Sidebar Navigation
-2. System Monitoring Dashboard  
-3. User Management Menu
-4. New Backend Routes
+> เอกสารนี้อ้างอิงจากโค้ดปัจจุบันใน `frontend/src/App.jsx`, `Sidebar.jsx`, `UserManagement.jsx`, `SystemStatus.jsx`, `ReportsCenter.jsx`, `Settings.jsx`, `MikroTikDashboard.jsx`, `AccessControlManager.jsx` และ backend routes ณ วันที่ `2026-04-10`
 
 ---
 
-## 1️⃣ Sidebar Navigation (ด้านซ้าย)
+## 📋 ภาพรวมระบบ
 
-### ลักษณะ:
-- 📱 Collapsible sidebar ที่สามารถซ่อนได้
-- 🎯 Navigation icons และ labels
-- 🎨 Dark theme สีเทา/ดำ
+`MT-API` เป็นระบบจัดการ `MikroTik Hotspot` แบบครบชุด ประกอบด้วย:
 
-### ปุ่มใน Sidebar:
-1. **👥 ผู้ใช้** - ไปยังหน้าจัดการผู้ใช้
-2. **📊 สถานะระบบ** - ไปยัง monitoring dashboard
-3. **🚪 ออกจากระบบ** - ด้านล่าง (logout)
-
-### Code:
-- File: `src/components/Sidebar.jsx`
-- ปรับขนาด: คลิก ◀▶ เพื่อเปิด/ปิด
+- ระบบลงทะเบียนผู้ใช้หน้า public
+- ระบบอนุมัติ/จัดการผู้ใช้ฝั่ง admin
+- Dashboard ติดตามสถานะระบบและ MikroTik
+- Reports / Audit / Notifications / Backup
+- Role & Permission Management
+- Settings สำหรับฐานข้อมูล, MikroTik, PDPA/Consent, Branding
+- เอกสาร deploy, Docker, Nginx และ GitHub guide
 
 ---
 
-## 2️⃣ System Monitoring Dashboard (🆕)
+## 🧭 เมนูหลักใน Dashboard
 
-### ที่อยู่: **📊 สถานะระบบ** ใน Sidebar
+เมนูใน `Sidebar` ปัจจุบันรองรับตามสิทธิ์ของ role ดังนี้:
 
-### แสดงข้อมูล 6 แบบ:
+1. `👥 ผู้ใช้`
+2. `📊 สถานะระบบ`
+3. `🗂️ รายงาน`
+4. `🐧 MikroTik`
+5. `🧷 IP Binding`
+6. `🌍 Walled Garden`
+7. `⚙️ Settings`
+8. `🛡️ Role & Permission`
+9. `🚪 ออกจากระบบ`
 
-#### 1. **CPU Usage** 🔴
-```
-- ร้อยละการใช้งาน (%)
-- CPU Model
-- Number of Cores
-- CPU Speed (MHz)
-- Load Average (1, 5, 15 นาที)
-```
-**สีแสดง:**
-- 🟢 < 50% = ปกติ (เขียว)
-- 🟡 50-80% = แนวเตือน (เหลือง)
-- 🔴 > 80% = เต็ม (แดง)
-
-#### 2. **RAM Usage** 🟢
-```
-- ร้อยละการใช้งาน (%)
-- Memory Total (GB)
-- Memory Used (GB)
-- Memory Free (GB)
-```
-
-#### 3. **System Info** ℹ️
-```
-- Hostname
-- Platform (Windows/Linux)
-- Node.js Version
-- Uptime (D:H:M:S)
-```
-
-#### 4. **Disk Usage** 💾
-```
-- แต่ละ Drive/Partition
-- Total Size
-- Used Space
-- Free Space
-- Usage % per drive
-```
-
-#### 5. **ทำให้สดใจ ✨**
-- Real-time updates (ทุก 1-15 วินาที)
-- Manual Refresh button
-- Auto-refresh toggle
-- Configurable update interval
-
-#### 6. **Timestamp** ⏱️
-```
-- เวลา Update ล่าสุด
-- แสดงเป็น Thai Locale
-```
-
-### วิธีใช้:
-1. Login ด้วย admin (admin/admin123)
-2. Sidebar จะปรากฏที่ด้านซ้าย
-3. คลิก **📊 สถานะระบบ**
-4. ดูข้อมูล CPU, RAM, Disk แบบ Real-time ✨
-
-### API Endpoint:
-```
-GET /api/system/stats (Full data)
-GET /api/system/quick (CPU, RAM, Uptime only)
-Authorization: Bearer {token}
-```
+คุณสมบัติ UI หลัก:
+- Sidebar แบบ `collapsible`
+- แสดง/ซ่อนเมนูตาม `permissions`
+- รองรับ branding เช่น `logo`, `app name`, `browser title`
+- แยก `Admin Console` / `Viewer Console` ตามสิทธิ์ผู้ใช้
 
 ---
 
-## 3️⃣ User Management (ปรับปรุง)
+## 1️⃣ ระบบลงทะเบียนและจัดการผู้ใช้ (User Management)
 
-### ที่อยู่: **👥 ผู้ใช้** ใน Sidebar
+ไฟล์หลัก:
+- `frontend/src/components/UserManagement.jsx`
+- `backend/src/routes/requestRoutes.js`
+- `backend/src/controllers/requestController.js`
 
-### ฟีเจอร์:
-1. **Stats Cards** - แสดงสถิติก่อนหน้า (ทั้งหมด, รออนุมัติ, อนุมัติแล้ว)
-2. **Tab Switching** - เลือก "รอ อนุมัติ" หรือ "อนุมัติแล้ว"
-3. **CRUD Operations**:
-   - ✏️ Edit - แก้ไขข้อมูล
-   - ✅ Approve - อนุมัติผู้ใช้
-   - ⚠️ Cancel - ยกเลิกอนุมัติ
-   - 🗑️ Delete - ลบผู้ใช้
+### ฟีเจอร์หน้า Public Registration
+- ฟอร์มลงทะเบียนผู้ใช้ Hotspot
+- กรอกข้อมูลได้หลายช่อง เช่น:
+  - ชื่อ-นามสกุล
+  - username / email / password
+  - profile
+  - เลขบัตรประชาชน
+  - เบอร์โทรศัพท์
+  - ตำแหน่ง / แผนก
+- รองรับ `Registration Code` แบบเปิด/ปิดได้จาก Settings
+- รองรับ `Consent / PDPA` แบบแก้ไขข้อความได้
+- มี checkbox ยืนยันเงื่อนไขและความถูกต้องของข้อมูล
 
-### UI ใหม่:
-- 🎨 Grid layout สำหรับ stats
-- 📊 Table แบบสะอาด
-- 🎯ปุ่มต่างๆ มีสีจำแนก
+### ฟีเจอร์หน้า Admin / User Management
+- แสดงสถิติผู้ใช้:
+  - ทั้งหมด
+  - รออนุมัติ
+  - อนุมัติแล้ว
+- แยกแท็บ `Pending`, `Approved`, `Gen / Import`
+- ค้นหาและแบ่งหน้า (`search + pagination`)
+- แก้ไขข้อมูลผู้ใช้ (`edit`)
+- อนุมัติผู้ใช้ (`approve`)
+- ยกเลิกอนุมัติ (`cancel approval`)
+- ปิด/เปิด user บน MikroTik (`disable / enable user`)
+- ลบรายการ (`delete`)
+- แสดงสถานะ user บน MikroTik เช่น `Active`, `Disabled`, `Not found`
 
----
-
-## 4️⃣ Backend New Endpoints
-
-### System Statistics Routes
-
-#### 1. **GET /api/system/stats** 
-**ข้อมูลเต็ม:**
-```json
-{
-  "timestamp": "2026-04-08T10:00:00.000Z",
-  "cpu": {
-    "usage": 45,
-    "info": {
-      "count": 8,
-      "model": "Intel Core i7",
-      "speed": 2400
-    },
-    "load": {
-      "one": 1.25,
-      "five": 1.50,
-      "fifteen": 1.35
-    }
-  },
-  "ram": {
-    "total": 16,
-    "used": 8,
-    "free": 8,
-    "percent": 50
-  },
-  "uptime": {
-    "seconds": 86400,
-    "formatted": "1d 0h 0m 0s"
-  },
-  "platform": "win32",
-  "hostname": "MY-COMPUTER",
-  "disks": [
-    {
-      "drive": "C:",
-      "total": 256,
-      "used": 150,
-      "free": 106,
-      "percent": 58.5
-    }
-  ]
-}
-```
-
-#### 2. **GET /api/system/quick**
-**ข้อมูลไม่เต็ม (CPU, RAM, Uptime):**
-```json
-{
-  "timestamp": "2026-04-08T10:00:00.000Z",
-  "cpu": 45,
-  "ram": {
-    "total": 16,
-    "used": 8,
-    "free": 8,
-    "percent": 50
-  },
-  "uptime": "1d 0h 0m 0s",
-  "hostname": "MY-COMPUTER"
-}
-```
-
-### Files Added:
-- `src/utils/systemInfo.js` - System info functions
-- `src/routes/systemRoutes.js` - Routes definition
-- Updated: `src/app.js` - Mount system routes
+### การเชื่อมกับ MikroTik ตอน approve
+- เมื่ออนุมัติ user ระบบจะ sync กับ MikroTik hotspot user
+- รองรับการ `enable`, `disable`, `remove` จากฝั่ง admin
+- ตรวจสอบสถานะจาก RouterOS ได้โดยตรง
 
 ---
 
-## 🔄 Component Architecture
+## 2️⃣ ระบบ Generate / Import ผู้ใช้ + คูปอง QR
 
-### Frontend Components:
-```
-App.jsx (Main)
-├── Sidebar.jsx - Navigation
-├── UserManagement.jsx - User CRUD
-├── SystemStatus.jsx - Monitoring Dashboard (😊 NEW)
-└── Login Form - Auth
-```
+อยู่ในแท็บ `Gen / Import` ของ `UserManagement`
 
-### Component Flow:
-```
-[Login] → [Admin Dashboard]
-            ├── Sidebar
-            │   ├── 👥 Users → UserManagement
-            │   ├── 📊 System → SystemStatus (NEW ⭐)
-            │   └── 🚪 Logout
-            └── Main Content Area
+### รองรับการนำเข้าไฟล์
+- `.bat`
+- `.csv`
+- `.txt` ลักษณะ key=value / separated values
+
+### ฟีเจอร์ generate อัตโนมัติ
+- กำหนดจำนวน user (`count`)
+- กำหนด prefix
+- กำหนดความยาว `username`
+- กำหนดความยาว `password`
+- เลือก `profile`
+
+### ฟีเจอร์จัดการรายการ batch
+- แก้ไขข้อมูลแต่ละแถวก่อน import
+- เลือกหลายรายการพร้อมกัน
+- import เฉพาะรายการที่เลือกได้
+- ลบรายการที่เลือกได้
+
+### ฟีเจอร์คูปอง / QR / export
+- พิมพ์คูปอง (`Print Coupons`)
+- สร้าง `QR Code` สำหรับ login hotspot
+- กำหนด `Hotspot Login URL`
+- ตั้ง `coupon brand` และ `coupon title`
+- copy username/password ทั้งชุด
+- export รายการเป็น `CSV`
+
+---
+
+## 3️⃣ System Monitoring Dashboard
+
+ไฟล์หลัก:
+- `frontend/src/components/SystemStatus.jsx`
+- `backend/src/routes/systemRoutes.js`
+- `backend/src/utils/systemInfo.js`
+
+### สิ่งที่แสดงได้
+- `CPU Usage`
+- `RAM Usage`
+- `Storage / Disk`
+- `Uptime`
+- `Top Processes` (เมื่อเปิด option `includeProcesses`)
+- `timestamp` และ health state ของระบบ
+
+### ความสามารถเพิ่มเติม
+- `Manual refresh`
+- `Auto refresh`
+- เลือกช่วง refresh เช่น `5s / 10s / 30s / 60s`
+- color-coded status เช่น เขียว / เหลือง / แดง
+- แจ้งเตือน CPU / RAM / storage เมื่อใช้ทรัพยากรสูง
+
+### API ที่เกี่ยวข้อง
+```http
+GET /api/system/stats
+GET /api/system/quick
+GET /api/system/notifications
 ```
 
 ---
 
-## 🚀 วิธีการใช้งาน
+## 4️⃣ Reports Center / Audit / Notifications / Backup
 
-### Step 1: เปิดแอปพลิเคชัน
-```
-http://localhost:5173
-```
+ไฟล์หลัก:
+- `frontend/src/components/ReportsCenter.jsx`
+- `backend/src/routes/systemRoutes.js`
+- `backend/src/routes/settingsRoutes.js`
+- `backend/src/utils/backupService.js`
+- `backend/src/models/AuditLog.js`
 
-### Step 2: Login Admin
-```
-Username: admin
-Password: admin123
-```
+### ฟีเจอร์รายงาน
+- รายงานสรุปรายวัน (`daily summary`)
+- `Charts + Trend analytics` เช่น:
+  - approval rate
+  - ค่าเฉลี่ยต่อวัน
+  - เทียบช่วงก่อนหน้า (`previous period comparison`)
+  - peak day / top departments
+- ตัวกรองตาม:
+  - ช่วงวันที่
+  - สถานะ
+  - แผนก
+  - ตำแหน่ง
+- export รายงานผู้ใช้เป็น `CSV` หรือ `JSON`
 
-### Step 3: ดูเมนู Sidebar
-```
-👥 ผู้ใช้ → User Management (เหมือนเดิม)
-📊 สถานะระบบ → System Monitoring (✨ NEW)
-🚪 ออกจากระบบ → Logout
-```
+### Audit Log
+- เก็บ log การทำงานสำคัญ เช่น:
+  - create request
+  - approve / cancel
+  - update / delete
+  - batch import
+  - settings update
+  - backup run
+- มี endpoint สำหรับดึง audit log มาแสดงในหน้า reports
 
-### Step 4: System Monitoring
-1. คลิก **📊 สถานะระบบ** ใน Sidebar
-2. ดู **CPU Usage, RAM, Disk** แบบ Real-time
-3. เปลี่ยน Refresh Rate ตามต้องการ
-4. Toggle **Auto-refresh** เปิด/ปิด
+### Notification Center
+- แจ้งจำนวน user ที่รออนุมัติ
+- แจ้งเตือน backup ยังไม่เคยรัน
+- แจ้ง error ของ auto backup
+- แจ้งเตือน CPU usage สูง
 
----
-
-## 📊 System Monitoring Features
-
-### Auto-Refresh Options:
-- ⏱️ ทุก 1 วินาที (เร็วที่สุด)
-- ⏱️ ทุก 2 วินาที (แนะนำ)
-- ⏱️ ทุก 5 วินาที
-- ⏱️ ทุก 10 วินาที
-
-### Color Coding:
-```
-CPU Usage:
-🟢 < 50%     (ปกติ - สีเขียว)
-🟡 50-80%    (แนวเตือน - สีเหลือง)
-🔴 > 80%     (เต็ม - สีแดง)
-```
-
----
-
-## 🎨 UI/UX Improvements
-
-### Sidebar
-- ✅ Collapsible design
-- ✅ Icons + Labels
-- ✅ Active state highlighting
-- ✅ Smooth transitions
-
-### Dark Theme
-- ✅ Gray-950 background
-- ✅ Professional look
-- ✅ Easy on eyes
-
-### Dashboard Cards
-- ✅ Grid layout
-- ✅ Color-coded status
-- ✅ Real-time updates
-- ✅ Responsive design
+### Backup / Restore
+- backup settings ออกเป็นไฟล์ `.json`
+- restore settings กลับเข้าระบบได้
+- ดูสถานะ scheduler และ recent backup files ได้
+- manual backup run จากหน้า reports ได้
+- มี `auto backup scheduler` ฝั่ง backend
 
 ---
 
-## 🛠️ Technical Details
+## 5️⃣ MikroTik Dashboard (RouterOS Integration)
 
-### Backend Stack:
-- Node.js `os` module - System info collection
-- RouterOS Client - MikroTik integration
-- Express.js Routes - System stats endpoints
+ไฟล์หลัก:
+- `frontend/src/components/MikroTikDashboard.jsx`
+- `backend/src/utils/mikrotik.js`
+- `backend/src/utils/mikrotikAPI.js`
+- `backend/src/routes/settingsRoutes.js`
 
-### Frontend Stack:
-- React 18.3.1
-- Vite 5.4.21
-- Tailwind CSS 3.4.4
+### หน้าย่อยใน MikroTik Dashboard
+- `System Status`
+- `Interfaces`
+- `Hotspot Users`
+- `Bandwidth`
+- `IP Binding`
+- `Walled Garden`
 
-### Data Flow:
+### ฟีเจอร์หลัก
+- ดึงสถานะระบบ RouterOS
+- ดึงรายการ interfaces
+- ดึง hotspot users
+- ดู bandwidth
+- refresh ข้อมูลอัตโนมัติ
+- แสดง `last update`
+
+### RouterOS v6 / v7 Compatibility
+- `RouterOS v7` ใช้แนวทาง `REST-first`
+- `RouterOS v6` ใช้ `ROS-API (routeros-client)`
+- มี fallback transport เพื่อไม่ให้กระทบระบบเดิม
+- มี diagnostics แสดงบนหน้าจอ เช่น:
+  - `preferred transport`
+  - `active transport`
+  - `apiPort`
+  - `restPort`
+  - `dataSource`
+
+---
+
+## 6️⃣ IP Binding Management
+
+ไฟล์หลัก:
+- `frontend/src/components/MikroTikDashboard.jsx`
+- `backend/src/utils/mikrotik.js`
+
+### รองรับการจัดการครบชุด
+- ดูรายการ `IP Binding`
+- filter ตาม `server / type / status / search`
+- เพิ่มรายการใหม่
+- แก้ไขรายการ
+- เปิด / ปิดการใช้งาน
+- ลบรายการ
+- ดึงรายชื่อ `Hotspot Server` จริงจาก MikroTik มาใช้ใน dropdown
+
+---
+
+## 7️⃣ Walled Garden Management
+
+ไฟล์หลัก:
+- `frontend/src/components/MikroTikDashboard.jsx`
+- `backend/src/utils/mikrotik.js`
+
+### รองรับการจัดการครบชุด
+- ดูรายการ `Walled Garden`
+- filter ตาม `search / server / action / status`
+- เพิ่ม rule ใหม่
+- แก้ไข rule
+- เปิด / ปิดการใช้งาน
+- ลบ rule
+- รองรับข้อมูลเช่น:
+  - `dst-host`
+  - `path`
+  - `dst-port`
+  - `protocol`
+  - `action`
+  - `comment`
+
+---
+
+## 8️⃣ Settings Module
+
+ไฟล์หลัก:
+- `frontend/src/components/Settings.jsx`
+- `backend/src/routes/settingsRoutes.js`
+
+### 8.1 Positions / Departments
+- CRUD ตำแหน่ง (`positions`)
+- CRUD แผนก (`departments`)
+- มีทั้ง public endpoint และ protected endpoint
+- ใช้ร่วมกับฟอร์มลงทะเบียนหน้า public
+
+### 8.2 Registration Code
+- ตั้งค่า code สำหรับเปิด/ปิดการลงทะเบียน
+- ตรวจสอบ code ก่อน submit ได้
+
+### 8.3 Consent / PDPA / Terms
+- แก้ไขหัวข้อและข้อความเงื่อนไขได้
+- แก้ไขข้อความ checkbox ได้
+- เปิด/ปิดการบังคับยืนยันความถูกต้องของข้อมูลได้
+
+### 8.4 App Branding
+- เปลี่ยนชื่อระบบ (`appName`)
+- subtitle
+- dashboard title / subtitle
+- footer text
+- `logo`
+- `favicon`
+- `browser title`
+
+### 8.5 Database Settings
+- ตั้งค่า host / port / database / username / password
+- test connection ได้จากหน้า Settings
+
+### 8.6 MikroTik Settings
+- ตั้งค่า IP / host / port / username / password
+- เลือก `OS Version` (`v6` / `v7`)
+- ทดสอบการเชื่อมต่อได้
+
+---
+
+## 9️⃣ Role & Permission Management
+
+ไฟล์หลัก:
+- `frontend/src/components/AccessControlManager.jsx`
+- `backend/src/utils/accessControl.js`
+- `backend/src/middleware/authMiddleware.js`
+- `backend/src/controllers/authController.js`
+
+### ระบบ role ปัจจุบัน
+- `super_admin`
+- `admin`
+- `viewer`
+- custom roles ที่เพิ่มเองได้จากหน้า UI
+
+### ฟีเจอร์สำคัญ
+- ติ๊กกำหนดว่า role ไหนเห็นเมนูอะไรบ้าง
+- กำหนด `action-level permissions` เพิ่มได้ เช่น:
+  - `approve / edit / delete / import`
+  - `export / backup / restore`
+  - `settings update / test`
+  - `view login history`
+- บันทึก permissions ลงฐานข้อมูล
+- สร้าง / แก้ไข / ลบ `managed dashboard users`
+- บัญชีจาก `.env` ถูกแสดงเป็น `read-only`
+- backend ตรวจสิทธิ์ระดับ section จริง ไม่ได้ซ่อนแค่เมนู frontend
+- มี endpoint `GET /api/auth/me` เพื่อ sync โปรไฟล์และ permissions ปัจจุบัน
+
+---
+
+## 🔔 Smart Alerts + Login History
+
+- ตั้งค่าแจ้งเตือนผ่าน `LINE` และ `Telegram` ได้จากหน้า `Settings`
+- มี `Test Alert` เพื่อลองส่งข้อความได้ทันที
+- ตั้ง trigger ได้ เช่น:
+  - pending approvals เกิน threshold
+  - CPU usage สูง
+  - backup error
+- มี `cooldown` กันการส่งซ้ำรัว ๆ
+- เก็บ `Login History` ทั้งสำเร็จและไม่สำเร็จ พร้อมเวลา, username, role, IP และ message
+
+---
+
+## 🔐 ความปลอดภัยและการควบคุมสิทธิ์
+
+- ใช้ `JWT` สำหรับ admin login
+- ใช้ middleware `protect`, `requireRole`, `requireSectionAccess`, `requireAnySectionAccess`, `requireActionAccess`
+- route สำคัญมี `auditAction` เพื่อเก็บ log
+- แยกสิทธิ์ `viewer` ให้ใช้งานแบบอ่านอย่างเดียวในหลายเมนู
+
+---
+
+## 🌐 เอกสารและไฟล์สำหรับ Deploy / GitHub
+
+นอกจากตัวระบบหลัก ยังมีเอกสารและไฟล์ช่วยใช้งานจริงเพิ่มแล้ว เช่น:
+
+- `DEPLOYMENT.md` — คู่มือ deploy แบบย่อ
+- `SERVER_DEPLOY_GUIDE.md` — คู่มือ deploy server แบบละเอียด
+- `GITHUB_GUIDE.md` — คู่มือ upload / update โค้ดขึ้น GitHub
+- `docker-compose.prod.yml` — production compose
+- `backend/Dockerfile`
+- `frontend/Dockerfile`
+- `deploy/nginx/mt-api.production.conf.example`
+- `deploy/nginx/mt-api.http-only.conf.example`
+
+---
+
+## 🛠️ Backend Routes สำคัญที่มีอยู่แล้ว
+
+### Auth
+```http
+POST /api/auth/login
+GET  /api/auth/me
+GET  /api/auth/login-history
 ```
-FE: Click "สถานะระบบ" 
-    → GET /api/system/stats
-    ↓
-BE: systemInfo.js collects data
-    ↓
-FE: Display with color coding
-    ↓
-Every 1-10 sec (auto-refresh)
+
+### Requests / Users
+```http
+POST   /api/requests
+GET    /api/requests
+GET    /api/requests/stats
+GET    /api/requests/daily-summary
+POST   /api/requests/batch-import
+POST   /api/requests/:id/approve
+POST   /api/requests/:id/cancel-approval
+POST   /api/requests/:id/disable-user
+POST   /api/requests/:id/enable-user
+PUT    /api/requests/:id
+DELETE /api/requests/:id
+```
+
+### System / Reports
+```http
+GET /api/system/stats
+GET /api/system/quick
+GET /api/system/notifications
+```
+
+### Settings / Branding / Consent / Backup
+```http
+GET/POST /api/settings/branding
+GET/POST /api/settings/registration-consent
+GET/POST /api/settings/registration-code
+GET/POST /api/settings/database
+GET/POST /api/settings/alerts
+POST     /api/settings/alerts/test
+GET      /api/settings/backup
+GET      /api/settings/backup/status
+POST     /api/settings/backup/run
+POST     /api/settings/restore
+GET      /api/settings/audit-logs
+```
+
+### MikroTik / Access Control
+```http
+GET/POST/PUT/DELETE /api/settings/mikrotik/*
+GET/POST            /api/settings/access-control
+POST/PUT/DELETE     /api/settings/access-control/users/*
 ```
 
 ---
 
-## 📦 Files Modified/Added
+## ✅ สรุปสถานะฟีเจอร์ปัจจุบัน
 
-### New Files:
-```
-✨ frontend/src/components/Sidebar.jsx
-✨ frontend/src/components/SystemStatus.jsx
-✨ frontend/src/components/UserManagement.jsx (refactored)
-✨ backend/src/utils/systemInfo.js
-✨ backend/src/routes/systemRoutes.js
-✨ FEATURES_ADDED.md (this file)
-```
-
-### Modified Files:
-```
-🔄 frontend/src/App.jsx (refactored to use components)
-🔄 backend/src/app.js (added system routes)
-🔄 backend/src/utils/mikrotik.js (enhanced logging)
-🔄 backend/src/routes/requestRoutes.js (added test endpoint)
-```
-
----
-
-## ✅ Checklist
-
-- [x] Sidebar Navigation
-- [x] User Management refactored
-- [x] System Monitoring Dashboard
-- [x] Real-time + Manual Refresh
-- [x] CPU monitoring
-- [x] RAM monitoring
-- [x] Disk monitoring
-- [x] Uptime display
-- [x] Color-coded status
-- [x] Dark theme UI
-- [x] API endpoints
-- [x] Error handling
-- [x] Responsive design
+- [x] Public registration + consent / PDPA
+- [x] User approval workflow + MikroTik sync
+- [x] Batch import / generated users / QR coupon print
+- [x] System monitoring dashboard
+- [x] Reports center + filters + export
+- [x] Audit log + notification center
+- [x] Auto backup scheduler + backup/restore
+- [x] MikroTik Dashboard
+- [x] IP Binding CRUD
+- [x] Walled Garden CRUD
+- [x] App branding / logo / favicon / browser title
+- [x] RouterOS v6 / v7 compatibility layer
+- [x] Role & Permission Management
+- [x] Managed dashboard users
+- [x] Docker / Nginx / Server deployment guide
+- [x] GitHub upload/update guide
 
 ---
 
-## 🎯 Next Steps (Optional)
+## 📌 หมายเหตุ
 
-1. **Graph Visualization**
-   - Add Chart.js
-   - Show CPU/RAM trends over time
+ถ้าต้องการอัปเดตเอกสารนี้ในอนาคต แนะนำให้ตรวจไฟล์เหล่านี้ก่อน:
 
-2. **Alerts**
-   - Alert when CPU > 85%
-   - Alert when RAM > 90%
+- `frontend/src/App.jsx`
+- `frontend/src/components/*.jsx`
+- `backend/src/routes/*.js`
+- `backend/src/utils/accessControl.js`
+- `backend/src/utils/mikrotik.js`
+- `README.md`
 
-3. **Process Monitoring**
-   - Show top processes
-   - Kill process functionality
-
-4. **Network Monitoring**
-   - Bandwidth usage
-   - Connection count
-
-5. **Export Data**
-   - Export stats as CSV
-   - Generate reports
-
----
-
-## 📞 Support
-
-หากพบปัญหา:
-1. ตรวจสอบ Console (F12)
-2. ดู Backend console logs
-3. ตรวจ Network requests
-4. บอกข้อมูล error ได้
-
----
-
-**ทำเดียว! System Monitoring Dashboard พร้อมใช้งานแล้ว! 🚀🎉**
+เพื่อให้ `FEATURES_ADDED.md` ตรงกับสถานะจริงของระบบเสมอ

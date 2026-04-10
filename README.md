@@ -49,7 +49,10 @@
 ## Deploy ใช้งานจริง
 
 - ใช้ชุด container ที่เตรียมไว้ได้จาก `docker-compose.prod.yml`
-- รายละเอียดอยู่ใน `DEPLOYMENT.md`
+- คู่มือ deploy แบบย่ออยู่ใน `DEPLOYMENT.md`
+- คู่มือ deploy แบบละเอียดอยู่ใน `SERVER_DEPLOY_GUIDE.md`
+- ตัวอย่าง Nginx production config อยู่ใน `deploy/nginx/`
+- วิธีใช้งาน Git/GitHub ดูได้ที่ `GITHUB_GUIDE.md`
 
 ## Security Note
 
@@ -60,6 +63,10 @@
 
 - ✅ `Audit Log` สำหรับ approve / delete / import / backup / restore
 - ✅ `Role & Permission` ระดับ `Super Admin`, `Admin`, `Viewer`
+- ✅ `Action-level Permissions` เช่น approve / edit / delete / import / export / backup / test
+- ✅ `Login History` บันทึกการเข้าสู่ระบบสำเร็จ/ไม่สำเร็จ พร้อมเวลาและ IP
+- ✅ `Charts + Trend Analytics` ในหน้า `Reports`
+- ✅ `LINE / Telegram Alerts` พร้อมปุ่ม `Test Alert`
 - ✅ `Notification Center` แจ้ง pending approvals และสถานะระบบ
 - ✅ `Auto Backup Scheduler` พร้อมสั่งรัน backup ได้ทันที
 - ✅ `Reports Filter` กรองรายงานตามช่วงวันที่และสถานะ

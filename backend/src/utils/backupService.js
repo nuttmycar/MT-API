@@ -31,9 +31,9 @@ const buildBackupPayload = async () => {
     models.Position.findAll({ order: [['createdAt', 'DESC']] }),
     models.Department.findAll({ order: [['createdAt', 'DESC']] }),
     sequelize.query(
-      'SELECT setting_key, setting_value FROM settings WHERE setting_key IN (?, ?, ?, ?, ?)',
+      'SELECT setting_key, setting_value FROM settings WHERE setting_key IN (?, ?, ?, ?, ?, ?, ?)',
       {
-        replacements: ['registration_code', 'registration_consent', 'app_branding', 'mikrotik_config', 'database_config'],
+        replacements: ['registration_code', 'registration_consent', 'app_branding', 'mikrotik_config', 'database_config', 'dashboard_access_control', 'alert_channels'],
         type: QueryTypes.SELECT,
       }
     ),

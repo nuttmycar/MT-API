@@ -25,7 +25,7 @@ const noticeStyles = {
   error: 'border-rose-200 bg-rose-50 text-rose-900',
 };
 
-export default function ReportsCenter({ token, showAlert, userRole = 'super_admin' }) {
+export default function ReportsCenter({ token, showAlert, userRole = 'super_admin', permissions = {} }) {
   const [reportLoading, setReportLoading] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -52,7 +52,10 @@ export default function ReportsCenter({ token, showAlert, userRole = 'super_admi
     range: { from: '', to: '' },
   });
 
-  const canManageBackups = ['super_admin', 'admin'].includes(userRole);
+  const reportActions = permissions?.actions?.reports || {};
+  const hasReportSection = typeof permissions?.reports === 'boolean' ? permissions.reports : true;
+  const canManageBackups = hasReportSection && (reportActions.backup ?? ['super_admin', 'admin'].includes(userRole));
+  const canExportReports = hasReportSection && (reportActions.export ?? ['super_admin', 'admin'].includes(userRole));
 
   useEffect(() => {
     if (token) {
@@ -260,6 +263,11 @@ export default function ReportsCenter({ token, showAlert, userRole = 'super_admi
   };
 
   const handleExportUserReport = async (format = 'csv') => {
+    if (!canExportReports) {
+      showAlert('สิทธิ์ของ role นี้ยังไม่สามารถ Export รายงานได้');
+      return;
+    }
+
     setReportLoading(true);
     try {
       const query = buildQueryString(filters);
@@ -301,6 +309,7 @@ export default function ReportsCenter({ token, showAlert, userRole = 'super_admi
   };
 
   const maxDailyTotal = Math.max(1, ...dailySummary.map((item) => item.total || 0));
+  const trendAnalytics = dailySummaryInfo.trendAnalytics || {};
 
   return (
     <div className="space-y-6">
@@ -427,6 +436,98 @@ export default function ReportsCenter({ token, showAlert, userRole = 'super_admi
         </div>
       </div>
 
+      <div className="grid gap-6 xl:grid-cols-[1.35fr,0.95fr]">
+        <div className="rounded-2xl bg-white p-6 shadow-lg ring-1 ring-slate-200">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-2xl font-bold text-black">📈 Charts + Trend Analytics</h3>
+              <p className="mt-1 text-sm text-gray-500">วิเคราะห์แนวโน้มการสมัครและการอนุมัติเทียบกับช่วงก่อนหน้า</p>
+            </div>
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">
+              Approval Rate {trendAnalytics.approvalRate || 0}%
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-4">
+            <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4">
+              <p className="text-xs text-cyan-700">เฉลี่ยต่อวัน</p>
+              <p className="mt-2 text-2xl font-bold text-cyan-950">{trendAnalytics.dailyAverage || 0}</p>
+            </div>
+            <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+              <p className="text-xs text-violet-700">Peak Day</p>
+              <p className="mt-2 text-lg font-bold text-violet-950">{trendAnalytics.peakDay || '-'}</p>
+              <p className="text-xs text-violet-700">{trendAnalytics.peakRegistrations || 0} registrations</p>
+            </div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+              <p className="text-xs text-emerald-700">เทียบช่วงก่อนหน้า</p>
+              <p className={`mt-2 text-2xl font-bold ${(trendAnalytics.changePercent?.requests || 0) >= 0 ? 'text-emerald-900' : 'text-rose-700'}`}>
+                {(trendAnalytics.changePercent?.requests || 0) >= 0 ? '+' : ''}{trendAnalytics.changePercent?.requests || 0}%
+              </p>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-xs text-amber-700">ช่วงก่อนหน้า</p>
+              <p className="mt-2 text-2xl font-bold text-amber-950">{trendAnalytics.previousPeriod?.totalRequests || 0}</p>
+              <p className="text-xs text-amber-700">requests</p>
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            {dailySummary.length === 0 ? (
+              <p className="text-sm text-gray-500">ยังไม่มีข้อมูลกราฟในช่วงที่เลือก</p>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex h-48 items-end gap-2">
+                  {dailySummary.map((item) => {
+                    const totalHeight = Math.max(10, Math.round(((item.total || 0) / maxDailyTotal) * 100));
+                    const approvedHeight = item.total ? Math.max(6, Math.round(((item.approved || 0) / maxDailyTotal) * 100)) : 0;
+
+                    return (
+                      <div key={item.date} className="flex flex-1 flex-col items-center gap-2">
+                        <div className="flex h-40 w-full items-end justify-center gap-1 rounded-xl bg-white px-1 py-2 ring-1 ring-slate-200">
+                          <div className="w-3 rounded-full bg-slate-300" style={{ height: `${totalHeight}%` }} title={`Total ${item.total}`} />
+                          <div className="w-3 rounded-full bg-emerald-500" style={{ height: `${approvedHeight}%` }} title={`Approved ${item.approved}`} />
+                        </div>
+                        <span className="text-[11px] text-slate-600">{item.date.slice(5)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex flex-wrap gap-4 text-xs text-slate-600">
+                  <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-slate-300" /> Total</span>
+                  <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-emerald-500" /> Approved</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-2xl bg-white p-6 shadow-lg ring-1 ring-slate-200">
+          <h3 className="text-2xl font-bold text-black">🏢 Top Departments</h3>
+          <p className="mt-1 text-sm text-gray-500">แผนกที่มีการลงทะเบียนมากที่สุดในช่วงเวลาที่กรองไว้</p>
+
+          <div className="mt-5 space-y-3">
+            {(trendAnalytics.topDepartments || []).length === 0 ? (
+              <p className="text-sm text-gray-500">ยังไม่มีข้อมูลแผนกสำหรับการวิเคราะห์</p>
+            ) : (
+              (trendAnalytics.topDepartments || []).map((item) => {
+                const percent = Math.max(8, Math.round((item.total / Math.max(1, (trendAnalytics.topDepartments || [])[0]?.total || 1)) * 100));
+                return (
+                  <div key={item.department}>
+                    <div className="mb-1 flex items-center justify-between text-sm">
+                      <span className="font-medium text-slate-800">{item.department}</span>
+                      <span className="text-slate-500">{item.total}</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-slate-100">
+                      <div className="h-2 rounded-full bg-gradient-to-r from-indigo-500 to-cyan-500" style={{ width: `${percent}%` }} />
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="grid gap-6 xl:grid-cols-2">
         <div className="rounded-2xl bg-white p-6 shadow-lg ring-1 ring-slate-200">
           <h3 className="text-2xl font-bold text-black">📦 Backup / Restore Settings</h3>
@@ -481,7 +582,7 @@ export default function ReportsCenter({ token, showAlert, userRole = 'super_admi
             <button
               type="button"
               onClick={() => handleExportUserReport('csv')}
-              disabled={reportLoading}
+              disabled={reportLoading || !canExportReports}
               className="flex-1 rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white transition hover:bg-emerald-700 disabled:bg-gray-400"
             >
               📊 Export CSV
@@ -489,7 +590,7 @@ export default function ReportsCenter({ token, showAlert, userRole = 'super_admi
             <button
               type="button"
               onClick={() => handleExportUserReport('json')}
-              disabled={reportLoading}
+              disabled={reportLoading || !canExportReports}
               className="flex-1 rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:bg-gray-400"
             >
               🧾 Export JSON
