@@ -51,6 +51,11 @@
 - ใช้ชุด container ที่เตรียมไว้ได้จาก `docker-compose.prod.yml`
 - รายละเอียดอยู่ใน `DEPLOYMENT.md`
 
+## Security Note
+
+- ไม่ควร commit ไฟล์ `backend/.env`, `.env`, หรือไฟล์ backup จริงขึ้น GitHub
+- ให้เก็บเฉพาะไฟล์ตัวอย่าง เช่น `.env.example` และ `.env.docker.example`
+
 ## ฟีเจอร์ที่มีเพิ่มแล้ว
 
 - ✅ `Audit Log` สำหรับ approve / delete / import / backup / restore
