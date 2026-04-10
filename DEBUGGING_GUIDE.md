@@ -33,14 +33,14 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
 ```
 MIKROTIK_HOST=192.168.0.1      ← ตรวจสอบ IP ถูกหรือไม่
 MIKROTIK_PORT=8728              ← Port ต้อง 8728 (ไม่ใช่ 80 หรือ 8080)
-MIKROTIK_USER=bbapi             ← ตรวจสอบ username
-MIKROTIK_PASS=eepower           ← ตรวจสอบ password ถูกหรือไม่
+MIKROTIK_USER=myapi             ← ตรวจสอบ username
+MIKROTIK_PASS=mypassword           ← ตรวจสอบ password ถูกหรือไม่
 MIKROTIK_SSL=false              ← ปกติเป็น false
 ```
 
 **หากไม่แน่ใจ ให้คลิกสาย MikroTik โดยตรง:**
 ```
-ssh bbapi@192.168.0.1
+ssh myapi@192.168.0.1
 ```
 
 ---
@@ -149,7 +149,7 @@ ssh bbapi@192.168.0.1
 
 3. ลองใช้ SSH ดู:
    ```bash
-   ssh bbapi@192.168.0.1
+   ssh myapi@192.168.0.1
    ```
 
 ---
@@ -160,14 +160,14 @@ ssh bbapi@192.168.0.1
 **วิธีแก้:**
 1. ตรวจสอบในไฟล์ `.env`:
    ```
-   MIKROTIK_USER=bbapi    <- ถูกไหม?
-   MIKROTIK_PASS=eepower  <- ถูกไหม?
+   MIKROTIK_USER=myapi    <- ถูกไหม?
+   MIKROTIK_PASS=mypassword  <- ถูกไหม?
    ```
 
 2. ทดสอบ login ด้วย SSH:
    ```bash
-   ssh bbapi@192.168.0.1
-   # ป้อน password: eepower
+   ssh myapi@192.168.0.1
+   # ป้อน password: mypassword
    ```
 
 ---
