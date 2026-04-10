@@ -6,7 +6,7 @@ services:
     environment:
       MARIADB_DATABASE: ${DB_NAME:-mt_api}
       MARIADB_USER: ${DB_USER:-sa}
-      MARIADB_PASSWORD: ${DB_PASS:-eepower}
+      MARIADB_PASSWORD: ${DB_PASS:-youpassword}
       MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-change_me_root}
       TZ: Asia/Bangkok
     command:
