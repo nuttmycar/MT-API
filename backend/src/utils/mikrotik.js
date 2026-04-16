@@ -423,6 +423,37 @@ const mapWalledGarden = (item = {}) => ({
   dataSource: 'REAL',
 });
 
+const mapDhcpLease = (item = {}) => {
+  const blocked = normalizeBoolean(readValue(item, 'blocked'));
+  const disabled = normalizeBoolean(readValue(item, 'disabled'));
+  const dynamic = normalizeBoolean(readValue(item, 'dynamic'));
+  const rawStatus = String(readValue(item, 'status') || '').toLowerCase();
+  const status = blocked
+    ? 'blocked'
+    : disabled
+      ? 'disabled'
+      : rawStatus || (dynamic ? 'bound' : 'static');
+
+  return {
+    id: readValue(item, '.id', 'id'),
+    address: readValue(item, 'address'),
+    activeAddress: readValue(item, 'active-address', 'activeAddress') || readValue(item, 'address'),
+    macAddress: readValue(item, 'active-mac-address', 'activeMacAddress') || readValue(item, 'mac-address', 'macAddress'),
+    hostName: readValue(item, 'host-name', 'hostName'),
+    server: readValue(item, 'server') || '-',
+    clientId: readValue(item, 'client-id', 'clientId'),
+    activeClientId: readValue(item, 'active-client-id', 'activeClientId'),
+    status,
+    lastSeen: readValue(item, 'last-seen', 'lastSeen') || '-',
+    expiresAfter: readValue(item, 'expires-after', 'expiresAfter') || (dynamic ? 'dynamic' : '-'),
+    dynamic,
+    blocked,
+    disabled,
+    comment: readValue(item, 'comment'),
+    dataSource: 'REAL',
+  };
+};
+
 const buildWalledGardenPayload = (rule = {}) => {
   const payload = {
     action: rule.action || 'allow',
@@ -623,6 +654,24 @@ exports.getHotspotServers = async () => {
     return mappedServers;
   } catch (err) {
     console.warn('[MikroTik] Failed to fetch hotspot servers:', err.message);
+    return [];
+  }
+};
+
+exports.getDhcpLeases = async () => {
+  try {
+    console.log('[MikroTik] Fetching DHCP leases...');
+    const config = await getMikrotikConfig();
+    const leases = await runWithTransport(
+      config,
+      'Get DHCP leases',
+      () => restRequest(config.ip, config.port, '/ip/dhcp-server/lease', 'GET', null, config),
+      () => withLegacyApi(config, 'Get DHCP leases', async (client) => client.menu('/ip dhcp-server lease').get())
+    );
+
+    return (Array.isArray(leases) ? leases : []).map(mapDhcpLease);
+  } catch (err) {
+    console.warn('[MikroTik] Failed to fetch DHCP leases:', err.message);
     return [];
   }
 };

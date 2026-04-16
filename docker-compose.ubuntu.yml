@@ -1,0 +1,92 @@
+# Docker Compose Override for Ubuntu
+# Usage: docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml up -d
+# This file contains Ubuntu-specific optimizations and configurations
+
+version: '3.8'
+
+services:
+  mt-api-db:
+    # MariaDB with Ubuntu-optimized settings
+    environment:
+      # Performance tuning for Ubuntu
+      MYSQL_INITDB_SKIP_TZINFO: "yes"
+      TZ: "UTC"
+    
+    # Linux-specific options
+    cap_add:
+      - SYS_NICE
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  mt-api-backend:
+    # Node.js backend
+    environment:
+      # Node.js optimization for production
+      NODE_ENV: production
+    
+    # Linux-specific options
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    
+    # Restart policy
+    restart_policy:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 3
+
+  mt-api-frontend:
+    # Nginx frontend
+    environment:
+      TZ: "UTC"
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    
+    # Restart policy
+    restart_policy:
+      condition: on-failure
+      delay: 5s
+      max_attempts: 3
+
+# Ubuntu-specific volume configuration
+volumes:
+  db_data:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=100m,uid=33,gid=33"  # MariaDB UID/GID on Ubuntu
+
+# Network configuration
+networks:
+  default:
+    driver: bridge
+    driver_opts:
+      com.docker.driver.mtu: 1500

@@ -9,6 +9,7 @@ const {
   enableHotspotUser,
   removeHotspotUser,
   getHotspotServers,
+  getDhcpLeases,
   getIpBindings,
   addIpBinding,
   updateIpBinding,
@@ -1395,6 +1396,35 @@ router.get('/mikrotik/hotspot-servers', protect, async (req, res) => {
     });
   } catch (error) {
     console.error('[MikroTik-HotspotServers] List error:', error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.get('/mikrotik/dhcp-leases', protect, async (req, res) => {
+  try {
+    const config = await getMikrotikConfig();
+
+    if (!config.ip || !config.port || !config.username || !config.password) {
+      return res.status(400).json({ message: 'Incomplete MikroTik configuration' });
+    }
+
+    const leases = await getDhcpLeases();
+    const activeTransport = (config.os_version || 'v7') === 'v6' ? 'ROS-API' : 'REST';
+    const dataSources = leases.map((lease) => lease.dataSource);
+    const overallDataSource = dataSources.length > 0 && dataSources.every((source) => source === dataSources[0]) ? dataSources[0] : 'MIXED';
+
+    res.json({
+      success: true,
+      leases,
+      total: leases.length,
+      dataSource: overallDataSource,
+      transport: activeTransport,
+      diagnostics: buildMikrotikDiagnostics(config, activeTransport),
+      os_version: config.os_version,
+      host: config.ip,
+    });
+  } catch (error) {
+    console.error('[MikroTik-DHCP] List error:', error.message);
     res.status(500).json({ message: error.message });
   }
 });

@@ -11,6 +11,7 @@ export default function MikroTikDashboard({ token, showAlert, initialTab = 'syst
   const [hotspotServers, setHotspotServers] = useState([{ id: 'all', name: 'all' }]);
   const [ipBindings, setIpBindings] = useState([]);
   const [walledGardens, setWalledGardens] = useState([]);
+  const [dhcpLeases, setDhcpLeases] = useState([]);
   const [bandwidth, setBandwidth] = useState(null);
   const [selectedInterface, setSelectedInterface] = useState(null);
   const [autoRefreshInterval, setAutoRefreshInterval] = useState(null); // null = disabled, 5000 = 5s, etc
@@ -55,11 +56,18 @@ export default function MikroTikDashboard({ token, showAlert, initialTab = 'syst
     action: 'all',
     status: 'all',
   });
+  const [leaseFilters, setLeaseFilters] = useState({
+    search: '',
+    server: 'all',
+    type: 'all',
+    status: 'all',
+  });
 
   useEffect(() => {
     if (activeTab === 'system') fetchSystemStatus();
     if (activeTab === 'interfaces') fetchInterfaces();
     if (activeTab === 'hotspot') fetchHotspotUsers();
+    if (activeTab === 'dhcp-leases') fetchDhcpLeases();
     if (activeTab === 'ip-binding') {
       fetchIpBindings();
       fetchHotspotServers();
@@ -89,6 +97,7 @@ export default function MikroTikDashboard({ token, showAlert, initialTab = 'syst
       if (activeTab === 'system') fetchSystemStatus();
       if (activeTab === 'interfaces') fetchInterfaces();
       if (activeTab === 'hotspot') fetchHotspotUsers();
+      if (activeTab === 'dhcp-leases') fetchDhcpLeases();
       if (activeTab === 'ip-binding') {
         fetchIpBindings();
         fetchHotspotServers();
@@ -256,6 +265,28 @@ export default function MikroTikDashboard({ token, showAlert, initialTab = 'syst
       }
     } catch (error) {
       console.error('Walled Garden fetch error:', error);
+      showAlert('Connection error: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchDhcpLeases = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE}/settings/mikrotik/dhcp-leases`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setDhcpLeases(data.leases || []);
+        setLastUpdate(new Date().toLocaleTimeString('th-TH'));
+        updateMikrotikMeta('DHCP Leases', data, data.leases?.[0]?.dataSource || '');
+      } else {
+        showAlert('❌ ' + (data.message || 'Failed to fetch DHCP leases'));
+      }
+    } catch (error) {
+      console.error('DHCP lease fetch error:', error);
       showAlert('Connection error: ' + error.message);
     } finally {
       setLoading(false);
@@ -553,6 +584,35 @@ export default function MikroTikDashboard({ token, showAlert, initialTab = 'syst
     disabled: ipBindings.filter((binding) => !!binding.disabled).length,
     bypassed: ipBindings.filter((binding) => binding.type === 'bypassed').length,
   };
+  const leaseSearch = leaseFilters.search.trim().toLowerCase();
+  const leaseServerOptions = [
+    { id: 'all', name: 'all' },
+    ...Array.from(new Set(dhcpLeases.map((lease) => lease.server || '-').filter(Boolean)))
+      .filter((server) => server !== 'all')
+      .sort((a, b) => a.localeCompare(b))
+      .map((server) => ({ id: server, name: server })),
+  ];
+  const filteredDhcpLeases = dhcpLeases.filter((lease) => {
+    const normalizedStatus = String(lease.status || '').toLowerCase();
+    const leaseType = lease.dynamic ? 'dynamic' : 'static';
+    const matchesSearch = !leaseSearch || [lease.address, lease.activeAddress, lease.macAddress, lease.hostName, lease.server, lease.comment, normalizedStatus]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(leaseSearch));
+    const matchesServer = leaseFilters.server === 'all' || (lease.server || '-') === leaseFilters.server;
+    const matchesType = leaseFilters.type === 'all' || leaseType === leaseFilters.type;
+    const matchesStatus = leaseFilters.status === 'all'
+      || normalizedStatus === leaseFilters.status
+      || (leaseFilters.status === 'active' && ['bound', 'offered'].includes(normalizedStatus));
+
+    return matchesSearch && matchesServer && matchesType && matchesStatus;
+  });
+  const leaseSummary = {
+    total: dhcpLeases.length,
+    active: dhcpLeases.filter((lease) => ['bound', 'offered'].includes(String(lease.status || '').toLowerCase())).length,
+    waiting: dhcpLeases.filter((lease) => String(lease.status || '').toLowerCase() === 'waiting').length,
+    dynamic: dhcpLeases.filter((lease) => lease.dynamic).length,
+    static: dhcpLeases.filter((lease) => !lease.dynamic).length,
+  };
   const walledSearch = walledGardenFilters.search.trim().toLowerCase();
   const filteredWalledGardens = walledGardens.filter((rule) => {
     const matchesSearch = !walledSearch || [rule.dstHost, rule.path, rule.comment, rule.server, rule.protocol, rule.dstPort]
@@ -714,6 +774,16 @@ export default function MikroTikDashboard({ token, showAlert, initialTab = 'syst
           }`}
         >
           👥 ผู้ใช้ Hotspot
+        </button>
+        <button
+          onClick={() => setActiveTab('dhcp-leases')}
+          className={`px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition ${
+            activeTab === 'dhcp-leases'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+          }`}
+        >
+          🧾 DHCP Leases
         </button>
         <button
           onClick={() => setActiveTab('ip-binding')}
@@ -1050,6 +1120,185 @@ export default function MikroTikDashboard({ token, showAlert, initialTab = 'syst
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500">ไม่มีข้อมูล</div>
+          )}
+        </div>
+      )}
+
+      {/* DHCP Leases Tab */}
+      {activeTab === 'dhcp-leases' && (
+        <div className="bg-white rounded-lg shadow-lg p-6 space-y-6">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-black">🧾 DHCP Server Leases</h2>
+              <p className="mt-1 text-sm text-gray-500">แสดง lease ของ DHCP Server พร้อมช่องค้นหาด้านบนเพื่อกรองข้อมูลได้เร็วขึ้น</p>
+            </div>
+            <div className="rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-900">
+              แสดงผล: <span className="font-bold">{filteredDhcpLeases.length}</span> / {leaseSummary.total} รายการ
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+              <p className="text-sm text-blue-700">Total Leases</p>
+              <p className="mt-2 text-2xl font-bold text-blue-950">{leaseSummary.total}</p>
+            </div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+              <p className="text-sm text-emerald-700">Active / Bound</p>
+              <p className="mt-2 text-2xl font-bold text-emerald-950">{leaseSummary.active}</p>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm text-amber-700">Dynamic</p>
+              <p className="mt-2 text-2xl font-bold text-amber-950">{leaseSummary.dynamic}</p>
+            </div>
+            <div className="rounded-xl border border-violet-200 bg-violet-50 p-4">
+              <p className="text-sm text-violet-700">Static</p>
+              <p className="mt-2 text-2xl font-bold text-violet-950">{leaseSummary.static}</p>
+            </div>
+          </div>
+
+          <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:grid-cols-2 xl:grid-cols-5">
+            <label className="space-y-1 xl:col-span-2">
+              <span className="text-sm font-medium text-gray-700">ค้นหา</span>
+              <input
+                value={leaseFilters.search}
+                onChange={(e) => setLeaseFilters({ ...leaseFilters, search: e.target.value })}
+                placeholder="ค้นหา IP, MAC, host name, server หรือ comment"
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-gray-700">Server</span>
+              <select
+                value={leaseFilters.server}
+                onChange={(e) => setLeaseFilters({ ...leaseFilters, server: e.target.value })}
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
+              >
+                {leaseServerOptions.map((server) => (
+                  <option key={`lease-filter-${server.id}`} value={server.name}>
+                    {server.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-gray-700">Lease Type</span>
+              <select
+                value={leaseFilters.type}
+                onChange={(e) => setLeaseFilters({ ...leaseFilters, type: e.target.value })}
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
+              >
+                <option value="all">all</option>
+                <option value="dynamic">dynamic</option>
+                <option value="static">static</option>
+              </select>
+            </label>
+            <div className="flex items-end gap-2">
+              <label className="flex-1 space-y-1">
+                <span className="text-sm font-medium text-gray-700">Status</span>
+                <select
+                  value={leaseFilters.status}
+                  onChange={(e) => setLeaseFilters({ ...leaseFilters, status: e.target.value })}
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
+                >
+                  <option value="all">all</option>
+                  <option value="active">active</option>
+                  <option value="bound">bound</option>
+                  <option value="waiting">waiting</option>
+                  <option value="offered">offered</option>
+                  <option value="blocked">blocked</option>
+                  <option value="disabled">disabled</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => setLeaseFilters({ search: '', server: 'all', type: 'all', status: 'all' })}
+                className="rounded-xl bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-300"
+              >
+                ล้าง
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            <div>
+              Active leases: <span className="font-bold">{leaseSummary.active}</span>
+              <span className="mx-2">•</span>
+              Waiting: <span className="font-bold">{leaseSummary.waiting}</span>
+            </div>
+            <button
+              onClick={fetchDhcpLeases}
+              disabled={loading}
+              className="rounded-lg bg-sky-600 px-3 py-1.5 font-semibold text-white transition hover:bg-sky-700 disabled:bg-gray-400"
+            >
+              🔄 Refresh
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="text-center py-8 text-gray-500">กำลังโหลด...</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-gray-100 text-black font-semibold">
+                  <tr>
+                    <th className="px-4 py-3">Address</th>
+                    <th className="px-4 py-3">Active IP</th>
+                    <th className="px-4 py-3">MAC Address</th>
+                    <th className="px-4 py-3">Host Name</th>
+                    <th className="px-4 py-3">Server</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Type</th>
+                    <th className="px-4 py-3">Last Seen / Expires</th>
+                    <th className="px-4 py-3">Comment</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {filteredDhcpLeases.length === 0 ? (
+                    <tr>
+                      <td colSpan="9" className="px-4 py-6 text-center text-gray-500">
+                        {dhcpLeases.length === 0 ? 'ยังไม่มีข้อมูล DHCP Lease จาก MikroTik' : 'ไม่พบรายการที่ตรงกับคำค้นหาหรือตัวกรองที่เลือก'}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredDhcpLeases.map((lease) => {
+                      const leaseStatus = lease.blocked ? 'blocked' : lease.disabled ? 'disabled' : String(lease.status || 'unknown').toLowerCase();
+                      const statusClass = ['bound', 'offered'].includes(leaseStatus)
+                        ? 'bg-green-100 text-green-800'
+                        : leaseStatus === 'waiting'
+                          ? 'bg-amber-100 text-amber-800'
+                          : ['blocked', 'disabled'].includes(leaseStatus)
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-gray-100 text-gray-700';
+
+                      return (
+                        <tr key={lease.id || `${lease.address}-${lease.macAddress}`} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 font-semibold text-black">{lease.address || '-'}</td>
+                          <td className="px-4 py-3 text-gray-700">{lease.activeAddress || '-'}</td>
+                          <td className="px-4 py-3 text-gray-700">{lease.macAddress || '-'}</td>
+                          <td className="px-4 py-3 text-gray-700">{lease.hostName || '-'}</td>
+                          <td className="px-4 py-3 text-gray-700">{lease.server || '-'}</td>
+                          <td className="px-4 py-3">
+                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass}`}>
+                              {leaseStatus}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${lease.dynamic ? 'bg-sky-100 text-sky-800' : 'bg-violet-100 text-violet-800'}`}>
+                              {lease.dynamic ? '⚡ Dynamic' : '📌 Static'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-gray-700">
+                            <div>Seen: {lease.lastSeen || '-'}</div>
+                            <div>Expires: {lease.expiresAfter || '-'}</div>
+                          </td>
+                          <td className="px-4 py-3 text-gray-600">{lease.comment || '-'}</td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -1717,6 +1966,7 @@ export default function MikroTikDashboard({ token, showAlert, initialTab = 'syst
             if (activeTab === 'system') fetchSystemStatus();
             if (activeTab === 'interfaces') fetchInterfaces();
             if (activeTab === 'hotspot') fetchHotspotUsers();
+            if (activeTab === 'dhcp-leases') fetchDhcpLeases();
             if (activeTab === 'ip-binding') {
               fetchIpBindings();
               fetchHotspotServers();
