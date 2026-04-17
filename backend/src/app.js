@@ -4,6 +4,7 @@ const authRoutes = require('./routes/authRoutes');
 const requestRoutes = require('./routes/requestRoutes');
 const systemRoutes = require('./routes/systemRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
+const versionRoutes = require('./routes/versionRoutes');
 const { getProfiles } = require('./controllers/requestController');
 const { protect } = require('./middleware/authMiddleware');
 
@@ -44,13 +45,10 @@ app.use('/api/auth', authRoutes);
 app.use('/api/requests', requestRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/', versionRoutes);
 
 // Standalone profiles endpoint
 app.get('/api/profiles', protect, getProfiles);
-
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
-});
 
 app.use((err, req, res, next) => {
   console.error(err);

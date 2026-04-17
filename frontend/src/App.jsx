@@ -6,6 +6,7 @@ import Settings from './components/Settings';
 import ReportsCenter from './components/ReportsCenter';
 import MikroTikDashboard from './components/MikroTikDashboard';
 import AccessControlManager from './components/AccessControlManager';
+import VersionInfo from './components/VersionInfo';
 
 const DEFAULT_APP_BRANDING = {
   appName: 'MT-API',
@@ -575,8 +576,13 @@ function App() {
             )}
           </div>
 
-          <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-xs text-slate-300">
-            {branding.footerText || DEFAULT_APP_BRANDING.footerText}
+          <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 flex items-center justify-between gap-4">
+            <div className="text-xs text-slate-300">
+              {branding.footerText || DEFAULT_APP_BRANDING.footerText}
+            </div>
+            <div className="text-xs">
+              <VersionInfo />
+            </div>
           </div>
         </div>
       </main>
