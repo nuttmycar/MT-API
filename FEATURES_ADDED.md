@@ -464,3 +464,59 @@ POST/PUT/DELETE     /api/settings/access-control/users/*
 - `README.md`
 
 เพื่อให้ `FEATURES_ADDED.md` ตรงกับสถานะจริงของระบบเสมอ
+
+---
+
+## 🆕 ฟีเจอร์ใหม่ (เพิ่มล่าสุด)
+
+### 0. 🗄️ Generated/Imported Users — บันทึกลง Database + จัดการ + พิมพ์ QR ซ้ำ
+- **ไฟล์:** `backend/src/models/GeneratedUser.js`, `backend/src/controllers/generatedUserController.js`, `backend/src/routes/generatedUserRoutes.js`, `backend/schema.sql`, `frontend/src/components/UserManagement.jsx`
+- **รายละเอียด:**
+  - ตาราง `generated_users` เก็บ: `username`, `password`, `profile`, `comment`, `fullName`, `type`, `status`, `mikrotikSynced`, `expiryDate`, `batchLabel`
+  - **แยกประเภท** ด้วย `type`: `generated` (🔧 Gen) หรือ `imported` (📂 Import) — แสดง badge ทั้งในแท็บ Gen/Import และแท็บ บันทึกแล้ว
+  - **Auto-save** หลัง Import เข้า MikroTik สำเร็จ (บันทึก type ถูกต้องตาม source)
+  - **Manual save** ผ่านปุ่ม "💾 บันทึกลง Database" พร้อมตั้งชื่อ Batch Label
+  - แท็บ **"💾 บันทึกแล้ว"** แสดงรายการทั้งหมดจาก DB พร้อม filter ตาม type / status / batchLabel / search
+  - จัดการแต่ละรายการ: ✏️ Edit (password, profile, comment, expiryDate, batchLabel), 🗑️ ลบ, ⬆️ Sync → MikroTik, ⛔ Disable / 🟢 Enable / 🗑️ Remove MK
+  - **พิมพ์ QR ซ้ำ** ได้ทุกเมื่อ: ปุ่ม 🧾 QR ต่อแถว หรือ พิมพ์ที่เลือก / พิมพ์ทั้งหมด
+  - Export CSV จากรายการที่บันทึกไว้แล้ว
+  - **API:** `GET/POST /api/generated-users`, `GET /api/generated-users/batches`, `PUT /api/generated-users/:id`, `DELETE /api/generated-users/:id`, `POST /api/generated-users/:id/sync`, `POST /api/generated-users/:id/disable`, `POST /api/generated-users/:id/enable`, `POST /api/generated-users/:id/remove-mikrotik`, `POST /api/generated-users/sync-batch`
+
+### 1. 🛡️ Rate Limiting (ป้องกัน Brute Force)
+- **ไฟล์:** `backend/src/app.js`
+- **รายละเอียด:** เพิ่ม in-memory rate limiter ไม่ต้องติดตั้ง package เพิ่มเติม
+  - Login: 10 ครั้ง / 15 นาที
+  - Register: 5 ครั้ง / ชั่วโมง
+  - General API: 300 ครั้ง / นาที
+- **ตอบสนอง:** `429 Too Many Requests` เมื่อเกินลิมิต
+
+### 2. 📅 User Expiry Date (กำหนดวันหมดอายุ Account)
+- **ไฟล์:** `backend/src/models/UserRequest.js`, `backend/src/controllers/requestController.js`, `backend/schema.sql`, `frontend/src/components/UserManagement.jsx`
+- **รายละเอียด:**
+  - เพิ่ม column `expiryDate DATE` ใน `user_requests`
+  - Admin สามารถตั้งวันหมดอายุผ่าน Edit modal
+  - ส่งค่า `expiryDate` ใน PATCH payload ไปยัง backend
+
+### 3. ✅ Bulk Approve (อนุมัติหลาย User พร้อมกัน)
+- **ไฟล์:** `backend/src/controllers/requestController.js`, `backend/src/routes/requestRoutes.js`, `frontend/src/components/UserManagement.jsx`
+- **รายละเอียด:**
+  - Backend: `POST /api/requests/bulk-approve` รับ array ของ `ids`
+  - Frontend: checkbox ในแต่ละแถวของ Pending tab + ปุ่ม "Approve ที่เลือก (N)"
+  - เพิ่มผู้ใช้ใน MikroTik ทีละคนต่อเนื่องกัน
+
+### 4. 📧 Email Notification (แจ้งเตือนทาง Email เมื่ออนุมัติ)
+- **ไฟล์:** `backend/src/utils/emailService.js`, `backend/src/routes/settingsRoutes.js`, `backend/src/controllers/requestController.js`, `frontend/src/components/Settings.jsx`
+- **รายละเอียด:**
+  - ส่ง Email แจ้งผู้ใช้เมื่อได้รับการอนุมัติ (username + password)
+  - Pure Node.js SMTP (ไม่ต้องติดตั้ง nodemailer)
+  - Settings UI: host, port, user, password, SSL toggle, template subject/body
+  - ปุ่มทดสอบส่ง Email จาก Settings
+  - Config เก็บใน `settings` table (key: `email_config`)
+
+### 5. 🚨 MikroTik Offline Alert (แจ้งเตือนเมื่อ MikroTik ไม่ตอบสนอง)
+- **ไฟล์:** `backend/src/utils/alertService.js`, `backend/src/routes/systemRoutes.js`, `backend/src/utils/mikrotik.js`
+- **รายละเอียด:**
+  - เพิ่ม trigger `mikrotikOffline` ใน `DEFAULT_ALERT_CONFIG`
+  - `/api/system/notifications` ตรวจสอบการเชื่อมต่อ MikroTik ทุกครั้งที่ poll
+  - แสดง notification ระดับ `error` เมื่อ MikroTik ไม่ตอบสนอง
+  - ส่งแจ้งเตือน LINE/Telegram เมื่อ offline (ผ่าน `maybeDispatchSystemAlerts`)

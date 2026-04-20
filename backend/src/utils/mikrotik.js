@@ -713,6 +713,52 @@ exports.disableHotspotUser = async (name) => {
   }
 };
 
+exports.updateHotspotUser = async (name, fields = {}) => {
+  try {
+    console.log(`[MikroTik] Updating user: ${name}`, fields);
+    const config = await getMikrotikConfig();
+
+    const payload = {};
+    if (fields.password !== undefined && fields.password !== '') payload.password = String(fields.password);
+    if (fields.profile !== undefined && fields.profile !== '') payload.profile = String(fields.profile);
+    if (fields.comment !== undefined) payload.comment = String(fields.comment);
+
+    if (Object.keys(payload).length === 0) {
+      return true;
+    }
+
+    return await runWithTransport(
+      config,
+      'Update hotspot user',
+      async () => {
+        const users = await restRequest(config.ip, config.port, '/ip/hotspot/user', 'GET', null, config);
+        const user = Array.isArray(users) ? users.find((item) => item.name === name) : null;
+
+        if (!user || !readValue(user, '.id', 'id')) {
+          throw new Error('User not found');
+        }
+
+        await restRequest(config.ip, config.port, `/ip/hotspot/user/${readValue(user, '.id', 'id')}`, 'PATCH', payload, config);
+        return true;
+      },
+      () => withLegacyApi(config, 'Update hotspot user', async (client) => {
+        const menu = client.menu('/ip hotspot user');
+        const user = await menu.where('name', name).getOnly();
+
+        if (!user) {
+          throw new Error('User not found');
+        }
+
+        await client.model(user).update(toLegacyPayload(payload));
+        return true;
+      })
+    );
+  } catch (err) {
+    console.error(`[MikroTik] Failed to update user ${name}:`, err.message);
+    throw err;
+  }
+};
+
 exports.enableHotspotUser = async (name) => {
   try {
     console.log(`[MikroTik] Enabling user: ${name}`);
@@ -1019,4 +1065,16 @@ exports.removeWalledGarden = async (id) => {
     })
   );
   return true;
+};
+exports.getMikrotikStatus = async () => {
+  const config = await getMikrotikConfig();
+  const result = await runWithTransport(
+    config,
+    'Get System Identity',
+    () => restRequest(config.ip, config.port, '/system/identity', 'GET', null, config),
+    () => withLegacyApi(config, 'Get System Identity', async (client) => {
+      return client.menu('/system identity').getAll();
+    })
+  );
+  return { connected: true, identity: result };
 };

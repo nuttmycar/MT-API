@@ -8,6 +8,8 @@ const {
   disableHotspotUser,
   enableHotspotUser,
   removeHotspotUser,
+  updateHotspotUser,
+  addHotspotUser,
   getHotspotServers,
   getDhcpLeases,
   getIpBindings,
@@ -1372,6 +1374,35 @@ router.delete('/mikrotik/hotspot-users/:username', protect, async (req, res) => 
   }
 });
 
+router.put('/mikrotik/hotspot-users/:username', protect, auditAction('mikrotik_user_update'), async (req, res) => {
+  try {
+    const username = decodeURIComponent(req.params.username || '');
+    const { password, profile, comment } = req.body || {};
+
+    await updateHotspotUser(username, { password, profile, comment });
+    res.json({ success: true, message: 'User updated successfully', username });
+  } catch (error) {
+    console.error('[MikroTik-Hotspot] Update error:', error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.post('/mikrotik/hotspot-users', protect, auditAction('mikrotik_user_add'), async (req, res) => {
+  try {
+    const { name, password, profile, comment } = req.body || {};
+
+    if (!name || !password) {
+      return res.status(400).json({ message: 'name และ password จำเป็นต้องระบุ' });
+    }
+
+    const result = await addHotspotUser({ name, password, profile: profile || 'default', comment: comment || '' });
+    res.json({ success: true, message: 'User added successfully', username: name, result });
+  } catch (error) {
+    console.error('[MikroTik-Hotspot] Add error:', error.message);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 router.get('/mikrotik/hotspot-servers', protect, async (req, res) => {
   try {
     const config = await getMikrotikConfig();
@@ -1636,5 +1667,50 @@ function formatBytes(bytes) {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
 }
+
+const { getEmailConfig, saveEmailConfig, sendApprovalEmail, DEFAULT_EMAIL_CONFIG } = require('../utils/emailService');
+
+// GET email config
+router.get('/email', protect, requireActionAccess('settings', 'view'), async (req, res) => {
+  try {
+    const config = await getEmailConfig();
+    // Mask password in response
+    res.json({ ...config, password: config.password ? '••••••••' : '' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST save email config
+router.post('/email', protect, requireActionAccess('settings', 'update'), auditAction({ action: 'SETTINGS_UPDATE', entityType: 'email_config' }), async (req, res) => {
+  try {
+    const existing = await getEmailConfig();
+    const payload = { ...req.body };
+    // Keep existing password if masked value sent
+    if (payload.password === '••••••••') payload.password = existing.password;
+    const saved = await saveEmailConfig(payload);
+    res.json({ ...saved, password: saved.password ? '••••••••' : '' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST test email
+router.post('/email/test', protect, requireActionAccess('settings', 'test'), async (req, res) => {
+  try {
+    const config = await getEmailConfig();
+    const testEmail = req.body.email || config.fromAddress;
+    if (!testEmail) return res.status(400).json({ message: 'Please provide a recipient email address' });
+    const result = await sendApprovalEmail({
+      fullName: 'Test User',
+      username: 'test_user',
+      password: 'test1234',
+      email: testEmail,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
 module.exports = router;

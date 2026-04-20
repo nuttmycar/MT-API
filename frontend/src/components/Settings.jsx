@@ -104,6 +104,15 @@ export default function Settings({ token, showAlert, onBrandingChange, permissio
   const [alertLoading, setAlertLoading] = useState(false);
   const [alertTestLoading, setAlertTestLoading] = useState(false);
   const [alertTestResult, setAlertTestResult] = useState(null);
+  const [emailConfig, setEmailConfig] = useState({
+    host: '', port: 587, secure: false, user: '', password: '',
+    fromName: '', fromAddress: '', notifyOnApprove: true,
+    subjectTemplate: 'บัญชี Hotspot ของคุณพร้อมใช้งานแล้ว',
+    bodyTemplate: 'สวัสดี {{fullName}},\n\nบัญชีของคุณได้รับการอนุมัติแล้ว\nUsername: {{username}}\nPassword: {{password}}\n\nขอบคุณ',
+  });
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [emailTestLoading, setEmailTestLoading] = useState(false);
+  const [emailTestResult, setEmailTestResult] = useState(null);
 
   const settingsActions = permissions?.actions?.settings || {};
   const hasSettingsSection = typeof permissions?.settings === 'boolean' ? permissions.settings : true;
@@ -120,6 +129,7 @@ export default function Settings({ token, showAlert, onBrandingChange, permissio
     fetchDailySummary();
     fetchMikrotikConfig();
     fetchAlertConfig();
+    fetchEmailConfig();
   }, []);
 
   const downloadFile = (content, fileName, mimeType) => {
@@ -330,8 +340,61 @@ export default function Settings({ token, showAlert, onBrandingChange, permissio
     }
   };
 
+  const fetchEmailConfig = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/settings/email`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (response.ok && data) {
+        setEmailConfig((prev) => ({ ...prev, ...data, password: '' }));
+      }
+    } catch (error) {
+      console.error('[Settings] Error fetching email config:', error);
+    }
+  };
+
+  const handleSaveEmailConfig = async (event) => {
+    event.preventDefault();
+    if (!canUpdateSettings) { showAlert('สิทธิ์ของ role นี้ยังไม่สามารถแก้ไข Email Settings ได้'); return; }
+    setEmailLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/settings/email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(emailConfig),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Failed to save email settings');
+      showAlert('✓ บันทึกการตั้งค่า Email แล้ว');
+      fetchEmailConfig();
+    } catch (error) {
+      showAlert(error.message);
+    } finally {
+      setEmailLoading(false);
+    }
+  };
+
+  const handleTestEmail = async () => {
+    if (!canTestSettings) { showAlert('สิทธิ์ของ role นี้ยังไม่สามารถทดสอบ Email ได้'); return; }
+    setEmailTestLoading(true);
+    setEmailTestResult(null);
+    try {
+      const response = await fetch(`${API_BASE}/settings/email/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(emailConfig),
+      });
+      const data = await response.json();
+      setEmailTestResult({ success: response.ok, message: data.message || (response.ok ? 'ส่งสำเร็จ' : 'ส่งล้มเหลว') });
+    } catch (error) {
+      setEmailTestResult({ success: false, message: error.message });
+    } finally {
+      setEmailTestLoading(false);
+    }
+  };
+
   const handleBackupSettings = async () => {
-    setReportLoading(true);
     try {
       const response = await fetch(`${API_BASE}/settings/backup`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -1364,7 +1427,7 @@ export default function Settings({ token, showAlert, onBrandingChange, permissio
                         ) : (
                           <button
                             onClick={() => handleStartEditPosition(pos)}
-                            className="rounded bg-amber-500 px-3 py-1 text-xs font-semibold text-white transition hover:bg-amber-600"
+                            className="rounded bg-amber-500 px-3 py-1 text-xs font-semibold text-black transition hover:bg-amber-600"
                           >
                             ✏️ แก้ไข
                           </button>
@@ -1480,7 +1543,7 @@ export default function Settings({ token, showAlert, onBrandingChange, permissio
                         ) : (
                           <button
                             onClick={() => handleStartEditDepartment(dept)}
-                            className="rounded bg-amber-500 px-3 py-1 text-xs font-semibold text-white transition hover:bg-amber-600"
+                            className="rounded bg-amber-500 px-3 py-1 text-xs font-semibold text-black transition hover:bg-amber-600"
                           >
                             ✏️ แก้ไข
                           </button>
@@ -1931,6 +1994,143 @@ export default function Settings({ token, showAlert, onBrandingChange, permissio
                   <span className="text-black">{mikrotikStatus['board-name']}</span>
                 </div>
               </div>
+            </div>
+          )}
+        </form>
+      </div>
+
+      {/* Email Configuration Section */}
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        <h2 className="text-2xl font-bold mb-6 text-black">📧 ตั้งค่า Email Notification</h2>
+        <form onSubmit={handleSaveEmailConfig} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">SMTP Host</label>
+              <input
+                type="text"
+                value={emailConfig.host}
+                onChange={(e) => setEmailConfig({ ...emailConfig, host: e.target.value })}
+                placeholder="เช่น smtp.gmail.com"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-black bg-white outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Port</label>
+              <input
+                type="number"
+                value={emailConfig.port}
+                onChange={(e) => setEmailConfig({ ...emailConfig, port: parseInt(e.target.value) || 587 })}
+                placeholder="587"
+                min="1"
+                max="65535"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-black bg-white outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Username / Email</label>
+              <input
+                type="text"
+                value={emailConfig.user}
+                onChange={(e) => setEmailConfig({ ...emailConfig, user: e.target.value })}
+                placeholder="your@email.com"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-black bg-white outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Password / App Password</label>
+              <input
+                type="password"
+                value={emailConfig.password}
+                onChange={(e) => setEmailConfig({ ...emailConfig, password: e.target.value })}
+                placeholder="เว้นว่างเพื่อไม่เปลี่ยน"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-black bg-white outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">ชื่อผู้ส่ง (From Name)</label>
+              <input
+                type="text"
+                value={emailConfig.fromName}
+                onChange={(e) => setEmailConfig({ ...emailConfig, fromName: e.target.value })}
+                placeholder="MT-API Hotspot"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-black bg-white outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Email ผู้ส่ง (From Address)</label>
+              <input
+                type="text"
+                value={emailConfig.fromAddress}
+                onChange={(e) => setEmailConfig({ ...emailConfig, fromAddress: e.target.value })}
+                placeholder="noreply@example.com"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-black bg-white outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={emailConfig.secure}
+                onChange={(e) => setEmailConfig({ ...emailConfig, secure: e.target.checked })}
+                className="h-4 w-4"
+              />
+              ใช้ SSL/TLS (port 465)
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={emailConfig.notifyOnApprove}
+                onChange={(e) => setEmailConfig({ ...emailConfig, notifyOnApprove: e.target.checked })}
+                className="h-4 w-4"
+              />
+              ส่ง Email เมื่ออนุมัติผู้ใช้
+            </label>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Subject Template</label>
+            <input
+              type="text"
+              value={emailConfig.subjectTemplate}
+              onChange={(e) => setEmailConfig({ ...emailConfig, subjectTemplate: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-4 py-2 text-black bg-white outline-none focus:border-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Body Template <span className="text-xs text-gray-500">(ใช้ {'{{fullName}}'}, {'{{username}}'}, {'{{password}}'})</span>
+            </label>
+            <textarea
+              rows={5}
+              value={emailConfig.bodyTemplate}
+              onChange={(e) => setEmailConfig({ ...emailConfig, bodyTemplate: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-4 py-2 text-black bg-white outline-none focus:border-blue-500 font-mono text-sm"
+            />
+          </div>
+          <div className="flex flex-wrap gap-3 pt-2">
+            <button
+              type="submit"
+              disabled={emailLoading || !canUpdateSettings}
+              className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:bg-gray-400"
+            >
+              {emailLoading ? 'กำลังบันทึก...' : '💾 บันทึก'}
+            </button>
+            <button
+              type="button"
+              onClick={handleTestEmail}
+              disabled={emailTestLoading || !canTestSettings}
+              className="rounded-lg bg-amber-500 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:bg-gray-400"
+            >
+              {emailTestLoading ? 'กำลังทดสอบ...' : '🧪 ทดสอบส่ง Email'}
+            </button>
+          </div>
+          {emailTestResult && (
+            <div className={`mt-3 rounded-lg p-3 text-sm ${emailTestResult.success ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+              {emailTestResult.success ? '✅' : '❌'} {emailTestResult.message}
             </div>
           )}
         </form>

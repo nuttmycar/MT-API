@@ -5,10 +5,32 @@ const requestRoutes = require('./routes/requestRoutes');
 const systemRoutes = require('./routes/systemRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const versionRoutes = require('./routes/versionRoutes');
+const generatedUserRoutes = require('./routes/generatedUserRoutes');
 const { getProfiles } = require('./controllers/requestController');
 const { protect } = require('./middleware/authMiddleware');
 
 const app = express();
+
+// --- Rate Limiters ---
+const rateLimit = (() => {
+  const store = new Map();
+  return (maxRequests, windowMs) => (req, res, next) => {
+    const key = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+    const now = Date.now();
+    const windowStart = now - windowMs;
+    const hits = (store.get(key) || []).filter(t => t > windowStart);
+    hits.push(now);
+    store.set(key, hits);
+    if (hits.length > maxRequests) {
+      return res.status(429).json({ message: 'Too many requests. Please try again later.' });
+    }
+    next();
+  };
+})();
+
+const loginLimiter = rateLimit(10, 15 * 60 * 1000);      // 10 attempts per 15 min
+const registerLimiter = rateLimit(5, 60 * 60 * 1000);    // 5 registrations per hour per IP
+const apiLimiter = rateLimit(300, 60 * 1000);             // 300 req/min general
 
 // Middleware for parsing requests with UTF-8
 app.use(express.json({ 
@@ -41,10 +63,11 @@ app.use(
   })
 );
 
-app.use('/api/auth', authRoutes);
-app.use('/api/requests', requestRoutes);
-app.use('/api/system', systemRoutes);
-app.use('/api/settings', settingsRoutes);
+app.use('/api/auth', loginLimiter, authRoutes);
+app.use('/api/requests', apiLimiter, requestRoutes);
+app.use('/api/generated-users', apiLimiter, generatedUserRoutes);
+app.use('/api/system', apiLimiter, systemRoutes);
+app.use('/api/settings', apiLimiter, settingsRoutes);
 app.use('/', versionRoutes);
 
 // Standalone profiles endpoint

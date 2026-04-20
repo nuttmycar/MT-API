@@ -5,35 +5,35 @@ module.exports = {
   app: {
     name: 'MT-API',
     displayName: 'MikroTik Hotspot Management System',
-    version: '1.2.0',
-    buildNumber: '20260417',
-    releaseDate: '2026-04-17',
+    version: '1.3.0',
+    buildNumber: '20260420',
+    releaseDate: '2026-04-20',
     description: 'Comprehensive MikroTik Hotspot management system with analytics and smart features',
   },
   
   features: {
-    version: '1.2.0',
-    releaseNotes: 'DHCP Leases + Ubuntu Deployment Suite',
-    lastUpdated: '2026-04-17',
+    version: '1.3.0',
+    releaseNotes: 'Generated Users DB Storage + QR/CSV History',
+    lastUpdated: '2026-04-20',
     highlights: [
-      'DHCP Server Leases Management',
-      'Ubuntu 24.04 LTS Deployment',
+      'Generated Users saved to Database (new table: generated_users)',
+      'DHCP Server Leases Management (v1.2)',
+      'Ubuntu 24.04 LTS Deployment (v1.2)',
       'Smart Analytics & Alerts (v1.1)',
       'Action-Level Permissions (v1.1)',
-      'Login History & Audit Logs (v1.1)',
     ],
   },
 
   components: {
     backend: {
-      version: '1.2.0',
+      version: '1.3.0',
       framework: 'Node.js + Express',
-      buildTime: '2026-04-17T12:00:00Z',
+      buildTime: '2026-04-20T00:00:00Z',
     },
     frontend: {
-      version: '1.2.0',
+      version: '1.3.0',
       framework: 'React 18 + Vite + Tailwind CSS',
-      buildTime: '2026-04-17T12:00:00Z',
+      buildTime: '2026-04-20T00:00:00Z',
     },
     database: {
       version: '10.6+',
@@ -52,9 +52,27 @@ module.exports = {
 
   versionHistory: [
     {
+      version: '1.3.0',
+      date: '2026-04-20',
+      status: 'Current',
+      features: [
+        'Generated Users persisted to Database (generated_users table)',
+        'Batch label grouping for generated users',
+        'Edit / Delete saved generated users',
+        'Sync saved users to MikroTik',
+        'Enable / Disable / Remove saved users from MikroTik',
+        'Print QR coupons from saved history',
+        'CSV export from saved history',
+        'Status tracking: generated → synced → disabled → removed',
+      ],
+      bugFixes: [
+        'Duplicate getMikrotikStatus import in systemRoutes.js',
+      ],
+    },
+    {
       version: '1.2.0',
       date: '2026-04-17',
-      status: 'Current',
+      status: 'Stable',
       features: [
         'DHCP Server Leases management',
         'Ubuntu deployment automation',
@@ -92,9 +110,9 @@ module.exports = {
   ],
 
   supportedVersions: {
-    current: '1.2.0',
-    lts: '1.2.0',
-    security: ['1.2.0', '1.1.x'],
+    current: '1.3.0',
+    lts: '1.3.0',
+    security: ['1.3.0', '1.2.x'],
     deprecated: ['1.0.0'],
   },
 

@@ -55,6 +55,10 @@ const initUserRequest = (sequelize) => {
       type: DataTypes.DATE,
       allowNull: true,
     },
+    expiryDate: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+    },
     createdAt: {
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW,

@@ -42,7 +42,8 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
     acceptedAccuracy: false,
   });
   const [editId, setEditId] = useState(null);
-  const [editPayload, setEditPayload] = useState({ fullName: '', email: '', password: '', profile: 'default' });
+  const [editPayload, setEditPayload] = useState({ fullName: '', email: '', password: '', profile: 'default', expiryDate: '' });
+  const [selectedPendingRequests, setSelectedPendingRequests] = useState([]);
   const [activeTab, setActiveTab] = useState('pending');
   const [batchUsers, setBatchUsers] = useState([]);
   const [couponUsers, setCouponUsers] = useState([]);
@@ -54,6 +55,14 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
   const [selectedBatchUsers, setSelectedBatchUsers] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+
+  // MikroTik Direct Users tab state
+  const [mikrotikSearchTerm, setMikrotikSearchTerm] = useState('');
+  const [mikrotikPage, setMikrotikPage] = useState(1);
+  const [mikrotikEditUser, setMikrotikEditUser] = useState(null);
+  const [mikrotikEditPayload, setMikrotikEditPayload] = useState({ password: '', profile: 'default', comment: '' });
+  const [showAddMikrotikUser, setShowAddMikrotikUser] = useState(false);
+  const [addMikrotikPayload, setAddMikrotikPayload] = useState({ name: '', password: '', profile: 'default', comment: '' });
   const [generateConfig, setGenerateConfig] = useState({
     count: 10,
     prefix: 'USR',
@@ -61,6 +70,20 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
     passwordLength: 8,
     profile: 'default',
   });
+
+  // Saved (DB) generated users state
+  const [savedUsers, setSavedUsers] = useState([]);
+  const [savedUsersTotal, setSavedUsersTotal] = useState(0);
+  const [savedUsersPage, setSavedUsersPage] = useState(1);
+  const [savedUsersSearch, setSavedUsersSearch] = useState('');
+  const [savedUsersStatusFilter, setSavedUsersStatusFilter] = useState('all');
+  const [savedUsersTypeFilter, setSavedUsersTypeFilter] = useState('all');
+  const [savedUsersBatchFilter, setSavedUsersBatchFilter] = useState('all');
+  const [batchLabels, setBatchLabels] = useState([]);
+  const [batchLabelInput, setBatchLabelInput] = useState('');
+  const [editSavedUser, setEditSavedUser] = useState(null);
+  const [editSavedPayload, setEditSavedPayload] = useState({ password: '', profile: 'default', comment: '', fullName: '', expiryDate: '', batchLabel: '' });
+  const [selectedSavedUsers, setSelectedSavedUsers] = useState([]);
   const userActions = permissions?.actions?.users || {};
   const fallbackManage = isAdmin && ['super_admin', 'admin'].includes(userRole);
   const canApproveUsers = isAdmin && (userActions.approve ?? fallbackManage);
@@ -68,6 +91,20 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
   const canDeleteUsers = isAdmin && (userActions.delete ?? fallbackManage);
   const canImportUsers = isAdmin && (userActions.import ?? fallbackManage);
   const canManageUsers = canApproveUsers || canEditUsers || canDeleteUsers || canImportUsers;
+
+  // MikroTik direct users computed
+  const mikrotikItemsPerPage = 10;
+  const normalizedMikrotikSearch = mikrotikSearchTerm.trim().toLowerCase();
+  const filteredMikrotikUsers = hotspotUsers.filter((u) => {
+    if (!normalizedMikrotikSearch) return true;
+    return [u.name, u.profile, u.comment].some((v) => String(v || '').toLowerCase().includes(normalizedMikrotikSearch));
+  });
+  const mikrotikTotalPages = Math.max(1, Math.ceil(filteredMikrotikUsers.length / mikrotikItemsPerPage));
+  const safeMikrotikPage = Math.min(mikrotikPage, mikrotikTotalPages);
+  const paginatedMikrotikUsers = filteredMikrotikUsers.slice(
+    (safeMikrotikPage - 1) * mikrotikItemsPerPage,
+    safeMikrotikPage * mikrotikItemsPerPage,
+  );
 
   const guardAdminAction = (allowed = canManageUsers, message = 'สิทธิ์ของ role นี้ใช้งานได้แบบอ่านอย่างเดียว') => {
     if (allowed) return true;
@@ -257,6 +294,7 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
         password: generateRandomString(passwordLength, passwordCharset),
         profile: generateConfig.profile || 'default',
         comment: 'Generated coupon user',
+        sourceType: 'generated',
       });
     }
 
@@ -280,9 +318,18 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
       if (isAdmin) {
         fetchProfiles();
         fetchHotspotUsers();
+        fetchSavedUsers({ page: 1 });
+        fetchBatchLabels();
       }
     }
   }, [token, isAdmin]);
+
+  useEffect(() => {
+    if (activeTab === 'saved') {
+      fetchSavedUsers({ page: 1, search: savedUsersSearch, status: savedUsersStatusFilter, type: savedUsersTypeFilter, batchLabel: savedUsersBatchFilter });
+    }
+  }, [activeTab]);
+
 
   useEffect(() => {
     setCurrentPage(1);
@@ -429,6 +476,37 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
     } catch (error) {
       console.error('[HotspotUsers] Error fetching:', error);
     }
+  };
+
+  const fetchSavedUsers = async ({ page = 1, search = savedUsersSearch, status = savedUsersStatusFilter, type = savedUsersTypeFilter, batchLabel = savedUsersBatchFilter } = {}) => {
+    try {
+      const params = new URLSearchParams({ page, limit: 20 });
+      if (search) params.set('search', search);
+      if (status && status !== 'all') params.set('status', status);
+      if (type && type !== 'all') params.set('type', type);
+      if (batchLabel && batchLabel !== 'all') params.set('batchLabel', batchLabel);
+      const response = await fetch(`${API_BASE}/generated-users?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setSavedUsers(data.data || []);
+        setSavedUsersTotal(data.total || 0);
+        setSavedUsersPage(page);
+      }
+    } catch (error) {
+      console.error('[SavedUsers] Error fetching:', error);
+    }
+  };
+
+  const fetchBatchLabels = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/generated-users/batches`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (response.ok) setBatchLabels(Array.isArray(data) ? data : []);
+    } catch (_) {}
   };
 
   const updateBatchUser = (index, field, value) => {
@@ -724,8 +802,9 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
         throw new Error('ไม่พบข้อมูลผู้ใช้ที่อ่านได้จากไฟล์ .bat/.csv');
       }
 
-      setBatchUsers(parsed);
-      setCouponUsers(parsed);
+      const tagged = parsed.map((u) => ({ ...u, sourceType: 'imported' }));
+      setBatchUsers(tagged);
+      setCouponUsers(tagged);
       setImportSummary(null);
       setSelectedBatchUsers([]);
       setActiveTab('batch');
@@ -765,11 +844,180 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
       fetchRequests();
       fetchStats();
       fetchHotspotUsers();
+
+      // Auto-save to generated_users DB after MikroTik import
+      const importedOk = result.imported || [];
+      if (importedOk.length > 0) {
+        try {
+          const usersToSave = importedOk.map((u) => ({
+            ...u,
+            type: (usersToImport.find((x) => x.username === u.username)?.sourceType) || u.sourceType || 'generated',
+            mikrotikSynced: true,
+          }));
+          const saveResp = await fetch(`${API_BASE}/generated-users`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ users: usersToSave, batchLabel: batchLabelInput.trim() || null }),
+          });
+          const saveResult = await saveResp.json();
+          if (saveResp.ok) {
+            showAlert(`บันทึกลง Database อัตโนมัติ ${saveResult.saved} รายการ`);
+            fetchSavedUsers({ page: 1 });
+            fetchBatchLabels();
+          }
+        } catch (_) {}
+      }
     } catch (error) {
       showAlert(error.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  // ── Save batch to DB ───────────────────────────────────────────────────────
+  const handleSaveBatchToDB = async (usersToSave = batchUsers) => {
+    if (!guardAdminAction(canImportUsers, 'role นี้ยังไม่สามารถบันทึก users ได้')) return;
+    if (!usersToSave.length) {
+      showAlert('ไม่มีรายการที่จะบันทึก');
+      return;
+    }
+    setLoading(true);
+    try {
+      // Map sourceType → type so DB records generated vs imported correctly
+      const tagged = usersToSave.map((u) => ({
+        ...u,
+        type: String(u.type || u.sourceType || 'generated') === 'imported' ? 'imported' : 'generated',
+      }));
+      const response = await fetch(`${API_BASE}/generated-users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ users: tagged, batchLabel: batchLabelInput.trim() || null }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Save failed');
+      showAlert(`บันทึกสำเร็จ ${result.saved} รายการ${result.skipped?.length ? `, ข้าม ${result.skipped.length}` : ''}`);
+      fetchSavedUsers({ page: 1 });
+      fetchBatchLabels();
+    } catch (error) {
+      showAlert(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Edit saved user ────────────────────────────────────────────────────────
+  const handleSaveEditSavedUser = async () => {
+    if (!editSavedUser) return;
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/generated-users/${editSavedUser.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(editSavedPayload),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Update failed');
+      showAlert('อัปเดตสำเร็จ');
+      setEditSavedUser(null);
+      fetchSavedUsers({ page: savedUsersPage });
+    } catch (error) {
+      showAlert(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Delete saved user ──────────────────────────────────────────────────────
+  const handleDeleteSavedUser = async (id) => {
+    if (!window.confirm('ลบ user นี้หรือไม่?')) return;
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/generated-users/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Delete failed');
+      showAlert('ลบสำเร็จ');
+      fetchSavedUsers({ page: savedUsersPage });
+    } catch (error) {
+      showAlert(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Sync saved user to MikroTik ────────────────────────────────────────────
+  const handleSyncSavedUser = async (id) => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/generated-users/${id}/sync`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Sync failed');
+      showAlert('Sync เข้า MikroTik สำเร็จ');
+      fetchSavedUsers({ page: savedUsersPage });
+    } catch (error) {
+      showAlert(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Sync selected saved users ──────────────────────────────────────────────
+  const handleSyncSelectedSavedUsers = async () => {
+    if (!selectedSavedUsers.length) { showAlert('ไม่มีรายการที่เลือก'); return; }
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/generated-users/sync-batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ids: selectedSavedUsers }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Sync failed');
+      showAlert(`Sync สำเร็จ ${result.synced?.length || 0} รายการ`);
+      setSelectedSavedUsers([]);
+      fetchSavedUsers({ page: savedUsersPage });
+      fetchHotspotUsers();
+    } catch (error) {
+      showAlert(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Disable/Enable/Remove saved user from MikroTik ─────────────────────────
+  const handleSavedUserMikrotikAction = async (id, action) => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/generated-users/${id}/${action}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || `${action} failed`);
+      showAlert(`${action} สำเร็จ`);
+      fetchSavedUsers({ page: savedUsersPage });
+    } catch (error) {
+      showAlert(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Print coupons from saved users ─────────────────────────────────────────
+  const savedUsersForCoupon = savedUsers.filter((u) => selectedSavedUsers.includes(u.id));
+  const handlePrintSavedCoupons = () => handlePrintCoupons(
+    savedUsersForCoupon.length
+      ? savedUsersForCoupon.map((u) => ({ username: u.username, password: u.password, profile: u.profile }))
+      : savedUsers.map((u) => ({ username: u.username, password: u.password, profile: u.profile }))
+  );
+
+  const handleExportSavedCSV = () => {
+    const data = (savedUsersForCoupon.length ? savedUsersForCoupon : savedUsers);
+    handleExportExcel(data.map((u) => ({ username: u.username, password: u.password, profile: u.profile, comment: u.comment, status: u.status, batchLabel: u.batchLabel, expiryDate: u.expiryDate })));
   };
 
   const handlePrintCoupons = (usersToPrint = couponUsers) => {
@@ -895,8 +1143,87 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
     showAlert(`Export Excel/CSV สำเร็จ ${usersToExport.length} รายการ`);
   };
 
-  const handleToggleUserStatus = async (id, action) => {
-    if (!guardAdminAction(canEditUsers, 'role นี้ยังไม่สามารถเปิด/ปิดสถานะ user ได้')) return;
+  // --- MikroTik Direct User Handlers ---
+  const handleMikrotikDirectAction = async (username, action) => {
+    if (!guardAdminAction(canEditUsers, 'role นี้ยังไม่สามารถจัดการ MikroTik users ได้')) return;
+    if (action === 'delete' && !window.confirm(`ลบ user "${username}" ออกจาก MikroTik หรือไม่?`)) return;
+
+    const actionMap = {
+      disable: { method: 'POST', url: `${API_BASE}/settings/mikrotik/hotspot-users/${encodeURIComponent(username)}/disable` },
+      enable: { method: 'POST', url: `${API_BASE}/settings/mikrotik/hotspot-users/${encodeURIComponent(username)}/enable` },
+      delete: { method: 'DELETE', url: `${API_BASE}/settings/mikrotik/hotspot-users/${encodeURIComponent(username)}` },
+    };
+
+    const cfg = actionMap[action];
+    if (!cfg) return;
+
+    setLoading(true);
+    try {
+      const res = await fetch(cfg.url, { method: cfg.method, headers: { Authorization: `Bearer ${token}` } });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.message || `${action} failed`);
+      showAlert(action === 'delete' ? 'ลบ user เรียบร้อยแล้ว' : action === 'disable' ? 'ปิดการใช้งานเรียบร้อยแล้ว' : 'เปิดการใช้งานเรียบร้อยแล้ว');
+      await fetchHotspotUsers();
+    } catch (err) {
+      showAlert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMikrotikEditSave = async () => {
+    if (!guardAdminAction(canEditUsers, 'role นี้ยังไม่สามารถแก้ไข MikroTik users ได้')) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/settings/mikrotik/hotspot-users/${encodeURIComponent(mikrotikEditUser)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          password: mikrotikEditPayload.password || undefined,
+          profile: mikrotikEditPayload.profile,
+          comment: mikrotikEditPayload.comment,
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.message || 'Update failed');
+      showAlert('แก้ไข MikroTik user เรียบร้อยแล้ว');
+      setMikrotikEditUser(null);
+      await fetchHotspotUsers();
+    } catch (err) {
+      showAlert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMikrotikAddUser = async () => {
+    if (!guardAdminAction(canImportUsers, 'role นี้ยังไม่สามารถเพิ่ม MikroTik users ได้')) return;
+    const { name, password, profile, comment } = addMikrotikPayload;
+    if (!name.trim() || !password.trim()) {
+      showAlert('กรุณากรอก Username และ Password');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/settings/mikrotik/hotspot-users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: name.trim(), password: password.trim(), profile: profile || 'default', comment: comment || '' }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.message || 'Add failed');
+      showAlert(`เพิ่ม user "${name}" ใน MikroTik เรียบร้อยแล้ว`);
+      setShowAddMikrotikUser(false);
+      setAddMikrotikPayload({ name: '', password: '', profile: 'default', comment: '' });
+      await fetchHotspotUsers();
+    } catch (err) {
+      showAlert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggleUserStatus = async (id, action) => {    if (!guardAdminAction(canEditUsers, 'role นี้ยังไม่สามารถเปิด/ปิดสถานะ user ได้')) return;
     const isDisable = action === 'disable';
     const confirmMessage = isDisable
       ? 'ต้องการปิดการใช้งาน user นี้หรือไม่?'
@@ -930,8 +1257,33 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
       email: item.email,
       password: '',
       profile: item.profile,
+      expiryDate: item.expiryDate ? item.expiryDate.slice(0, 10) : '',
     });
     await fetchProfiles();
+  };
+
+  const handleBulkApprove = async () => {
+    if (!guardAdminAction(canApproveUsers, 'role นี้ยังไม่สามารถอนุมัติผู้ใช้ได้')) return;
+    if (selectedPendingRequests.length === 0) return;
+    if (!window.confirm(`อนุมัติ ${selectedPendingRequests.length} รายการที่เลือกหรือไม่?`)) return;
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/requests/bulk-approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ids: selectedPendingRequests }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Bulk approve failed');
+      showAlert(`✅ อนุมัติสำเร็จ ${result.approved} รายการ${result.failed > 0 ? ` (ล้มเหลว ${result.failed})` : ''}`);
+      setSelectedPendingRequests([]);
+      fetchStats();
+      fetchRequests();
+    } catch (error) {
+      showAlert(error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -947,6 +1299,7 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
         body: JSON.stringify({
           ...editPayload,
           password: editPayload.password || undefined,
+          expiryDate: editPayload.expiryDate || null,
         }),
       });
       const result = await response.json();
@@ -1384,6 +1737,32 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
           </button>
         </div>
 
+        {/* Save to DB section */}
+        <div className="mt-4 flex flex-wrap items-end gap-3 rounded-xl bg-teal-50 p-4">
+          <div className="flex-1 min-w-[200px] space-y-1">
+            <label className="text-sm font-medium text-teal-800">ชื่อ Batch (เพื่อจัดกลุ่ม)</label>
+            <input
+              value={batchLabelInput}
+              onChange={(e) => setBatchLabelInput(e.target.value)}
+              placeholder="เช่น Batch-Apr-2026 (ไม่บังคับ)"
+              className="w-full rounded-lg border border-teal-300 bg-white px-3 py-2 text-sm text-gray-700"
+            />
+          </div>
+          <button
+            onClick={() => handleSaveBatchToDB(batchUsers)}
+            disabled={loading || batchUsers.length === 0}
+            className="rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:bg-gray-400"
+          >
+            💾 บันทึกลง Database
+          </button>
+          <button
+            onClick={() => { setActiveTab('saved'); fetchSavedUsers({ page: 1 }); }}
+            className="rounded-xl bg-teal-100 px-4 py-2 text-sm font-semibold text-teal-800 hover:bg-teal-200"
+          >
+            📂 ดูรายการที่บันทึกแล้ว →
+          </button>
+        </div>
+
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-700">
             <p className="font-semibold text-slate-900">Preview ผู้ใช้ที่อ่านได้</p>
@@ -1492,14 +1871,38 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
               >
                 Gen / Import ({batchUsers.length})
               </button>
+              <button
+                onClick={() => { setActiveTab('mikrotik'); fetchHotspotUsers(); }}
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  activeTab === 'mikrotik'
+                    ? 'bg-rose-600 text-white shadow'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                🐧 MikroTik Users ({hotspotUsers.length})
+              </button>
+              <button
+                onClick={() => { setActiveTab('saved'); fetchSavedUsers({ page: 1 }); fetchBatchLabels(); }}
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  activeTab === 'saved'
+                    ? 'bg-teal-600 text-white shadow'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                💾 บันทึกแล้ว ({savedUsersTotal})
+              </button>
             </div>
           </div>
 
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <input
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder={activeTab === 'batch' ? 'ค้นหา username / password / profile' : 'ค้นหาชื่อ / username / email / profile'}
+              value={activeTab === 'mikrotik' ? mikrotikSearchTerm : activeTab === 'saved' ? savedUsersSearch : searchTerm}
+              onChange={(e) => {
+                if (activeTab === 'mikrotik') setMikrotikSearchTerm(e.target.value);
+                else if (activeTab === 'saved') { setSavedUsersSearch(e.target.value); fetchSavedUsers({ page: 1, search: e.target.value }); }
+                else setSearchTerm(e.target.value);
+              }}
+              placeholder={activeTab === 'batch' ? 'ค้นหา username / password / profile' : activeTab === 'mikrotik' ? 'ค้นหา username / profile / comment' : activeTab === 'saved' ? 'ค้นหา username / batch label' : 'ค้นหาชื่อ / username / email / profile'}
               className="w-full max-w-xl rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-700"
             />
             <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -1523,11 +1926,296 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
                   เลือกแล้ว <span className="font-bold">{selectedBatchUsers.length}</span> รายการ
                 </span>
               )}
+              {activeTab === 'pending' && selectedPendingRequests.length > 0 && (
+                <button
+                  onClick={handleBulkApprove}
+                  disabled={loading}
+                  className="rounded-lg bg-green-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-green-700 disabled:bg-gray-400"
+                >
+                  ✅ Approve ที่เลือก ({selectedPendingRequests.length})
+                </button>
+              )}
             </div>
           </div>
         </div>
 
-        {activeTab === 'batch' ? (
+        {activeTab === 'saved' ? (
+          <div className="space-y-4 p-4">
+            {/* Filters */}
+            <div className="flex flex-wrap items-center gap-2 rounded-xl bg-teal-50 p-3 text-sm">
+              <select
+                value={savedUsersTypeFilter}
+                onChange={(e) => { setSavedUsersTypeFilter(e.target.value); fetchSavedUsers({ page: 1, type: e.target.value }); }}
+                className="rounded-lg border border-teal-300 bg-white px-3 py-1.5 text-sm text-gray-700"
+              >
+                <option value="all">ทุกประเภท</option>
+                <option value="generated">🔧 Generated</option>
+                <option value="imported">📂 Imported</option>
+              </select>
+              <select
+                value={savedUsersStatusFilter}
+                onChange={(e) => { setSavedUsersStatusFilter(e.target.value); fetchSavedUsers({ page: 1, status: e.target.value }); }}
+                className="rounded-lg border border-teal-300 bg-white px-3 py-1.5 text-sm text-gray-700"
+              >
+                <option value="all">ทุกสถานะ</option>
+                <option value="generated">Generated</option>
+                <option value="synced">Synced</option>
+                <option value="disabled">Disabled</option>
+                <option value="removed">Removed</option>
+              </select>
+              <select
+                value={savedUsersBatchFilter}
+                onChange={(e) => { setSavedUsersBatchFilter(e.target.value); fetchSavedUsers({ page: 1, batchLabel: e.target.value }); }}
+                className="rounded-lg border border-teal-300 bg-white px-3 py-1.5 text-sm text-gray-700"
+              >
+                <option value="all">ทุก Batch</option>
+                {batchLabels.map((label) => <option key={label} value={label}>{label}</option>)}
+              </select>
+              <button onClick={() => fetchSavedUsers({ page: savedUsersPage })} disabled={loading} className="rounded-lg bg-white px-3 py-1.5 font-semibold text-teal-700 ring-1 ring-teal-200">🔄 Refresh</button>
+              {selectedSavedUsers.length > 0 && (
+                <button onClick={handleSyncSelectedSavedUsers} disabled={loading} className="rounded-lg bg-blue-600 px-3 py-1.5 font-semibold text-white hover:bg-blue-700 disabled:bg-gray-400">
+                  ⬆️ Sync ที่เลือก ({selectedSavedUsers.length}) → MikroTik
+                </button>
+              )}
+              {selectedSavedUsers.length > 0 && (
+                <button onClick={handlePrintSavedCoupons} className="rounded-lg bg-emerald-600 px-3 py-1.5 font-semibold text-white hover:bg-emerald-700">🧾 พิมพ์ที่เลือก</button>
+              )}
+              {selectedSavedUsers.length > 0 && (
+                <button onClick={handleExportSavedCSV} className="rounded-lg bg-indigo-600 px-3 py-1.5 font-semibold text-white hover:bg-indigo-700">📊 Export CSV</button>
+              )}
+              {savedUsers.length > 0 && selectedSavedUsers.length === 0 && (
+                <button onClick={handlePrintSavedCoupons} className="rounded-lg bg-emerald-100 px-3 py-1.5 font-semibold text-emerald-800 hover:bg-emerald-200">🧾 พิมพ์ทั้งหมด</button>
+              )}
+              {savedUsers.length > 0 && selectedSavedUsers.length === 0 && (
+                <button onClick={handleExportSavedCSV} className="rounded-lg bg-indigo-100 px-3 py-1.5 font-semibold text-indigo-800 hover:bg-indigo-200">📊 Export ทั้งหมด</button>
+              )}
+              <span className="ml-auto rounded-full bg-white px-3 py-1 text-teal-700 ring-1 ring-teal-200">
+                ทั้งหมด <span className="font-bold">{savedUsersTotal}</span> รายการ
+              </span>
+            </div>
+
+            {savedUsers.length === 0 ? (
+              <div className="py-12 text-center text-gray-500">ยังไม่มีรายการที่บันทึกไว้</div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm text-black">
+                    <thead className="bg-teal-50 text-gray-900">
+                      <tr>
+                        <th className="px-4 py-3">
+                          <input type="checkbox"
+                            checked={savedUsers.length > 0 && selectedSavedUsers.length === savedUsers.length}
+                            onChange={(e) => setSelectedSavedUsers(e.target.checked ? savedUsers.map((u) => u.id) : [])}
+                            className="h-4 w-4"
+                          />
+                        </th>
+                        <th className="px-4 py-3 font-semibold">Username</th>
+                        <th className="px-4 py-3 font-semibold">Password</th>
+                        <th className="px-4 py-3 font-semibold">Profile</th>
+                        <th className="px-4 py-3 font-semibold">ประเภท</th>
+                        <th className="px-4 py-3 font-semibold">Batch</th>
+                        <th className="px-4 py-3 font-semibold">สถานะ DB</th>
+                        <th className="px-4 py-3 font-semibold">สถานะ MikroTik</th>
+                        <th className="px-4 py-3 font-semibold">วันหมดอายุ</th>
+                        <th className="px-4 py-3 font-semibold">จัดการ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {savedUsers.map((u) => {
+                        const statusBadge = {
+                          generated: 'bg-slate-100 text-slate-700',
+                          synced: 'bg-green-100 text-green-800',
+                          disabled: 'bg-amber-100 text-amber-800',
+                          removed: 'bg-red-100 text-red-700',
+                        }[u.status] || 'bg-gray-100 text-gray-700';
+                        const mikrotikBadge = u.mikrotikExists === false ? 'bg-slate-100 text-slate-600' : u.mikrotikDisabled ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800';
+                        const mikrotikLabel = u.mikrotikExists === false ? '📝 ยังไม่ Sync' : u.mikrotikDisabled ? '⛔ Disabled' : '🟢 Active';
+                        return (
+                          <tr key={u.id} className="hover:bg-teal-50/30 align-top">
+                            <td className="px-4 py-3">
+                              <input type="checkbox"
+                                checked={selectedSavedUsers.includes(u.id)}
+                                onChange={(e) => setSelectedSavedUsers(e.target.checked ? [...selectedSavedUsers, u.id] : selectedSavedUsers.filter((id) => id !== u.id))}
+                                className="h-4 w-4"
+                              />
+                            </td>
+                            <td className="px-4 py-3 font-medium">{u.username}</td>
+                            <td className="px-4 py-3 font-mono text-xs">{u.password}</td>
+                            <td className="px-4 py-3">{u.profile}</td>
+                            <td className="px-4 py-3">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                u.type === 'imported' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                              }`}>
+                                {u.type === 'imported' ? '📂 Import' : '🔧 Gen'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-gray-500">{u.batchLabel || '-'}</td>
+                            <td className="px-4 py-3">
+                              <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${statusBadge}`}>
+                                {u.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${mikrotikBadge}`}>
+                                {mikrotikLabel}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-xs">{u.expiryDate || '-'}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-wrap gap-1">
+                                <button onClick={() => { setEditSavedUser(u); setEditSavedPayload({ password: u.password, profile: u.profile, comment: u.comment || '', fullName: u.fullName || '', expiryDate: u.expiryDate || '', batchLabel: u.batchLabel || '' }); }}
+                                  className="rounded bg-cyan-500 px-2 py-1 text-xs font-semibold text-white hover:bg-cyan-600">✏️ Edit</button>
+                                {u.status === 'generated' && (
+                                  <button onClick={() => handleSyncSavedUser(u.id)} disabled={loading}
+                                    className="rounded bg-blue-600 px-2 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:bg-gray-400">⬆️ Sync</button>
+                                )}
+                                {u.mikrotikExists && !u.mikrotikDisabled && (
+                                  <button onClick={() => handleSavedUserMikrotikAction(u.id, 'disable')} disabled={loading}
+                                    className="rounded bg-amber-600 px-2 py-1 text-xs font-semibold text-white hover:bg-amber-700 disabled:bg-gray-400">⛔ Disable</button>
+                                )}
+                                {u.mikrotikExists && u.mikrotikDisabled && (
+                                  <button onClick={() => handleSavedUserMikrotikAction(u.id, 'enable')} disabled={loading}
+                                    className="rounded bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:bg-gray-400">🟢 Enable</button>
+                                )}
+                                {u.mikrotikExists && (
+                                  <button onClick={() => handleSavedUserMikrotikAction(u.id, 'remove-mikrotik')} disabled={loading}
+                                    className="rounded bg-orange-600 px-2 py-1 text-xs font-semibold text-white hover:bg-orange-700 disabled:bg-gray-400">🗑️ Remove MK</button>
+                                )}
+                                <button onClick={() => handlePrintCoupons([{ username: u.username, password: u.password, profile: u.profile }])}
+                                  className="rounded bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-200">🧾 QR</button>
+                                {canDeleteUsers && (
+                                  <button onClick={() => handleDeleteSavedUser(u.id)} disabled={loading}
+                                    className="rounded bg-red-600 px-2 py-1 text-xs font-semibold text-white hover:bg-red-700 disabled:bg-gray-400">🗑️ ลบ</button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {/* Pagination */}
+                {savedUsersTotal > 20 && (
+                  <div className="flex items-center justify-between border-t border-gray-200 bg-slate-50 px-4 py-3">
+                    <p className="text-sm text-slate-600">หน้า <span className="font-semibold">{savedUsersPage}</span> · รวม <span className="font-semibold">{savedUsersTotal}</span> รายการ</p>
+                    <div className="flex gap-2">
+                      <button onClick={() => fetchSavedUsers({ page: savedUsersPage - 1 })} disabled={savedUsersPage <= 1} className="rounded-lg border bg-white px-3 py-1.5 text-sm disabled:opacity-50">ก่อนหน้า</button>
+                      <button onClick={() => fetchSavedUsers({ page: savedUsersPage + 1 })} disabled={savedUsersPage * 20 >= savedUsersTotal} className="rounded-lg border bg-white px-3 py-1.5 text-sm disabled:opacity-50">ถัดไป</button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        ) : activeTab === 'mikrotik' ? (
+          <div className="space-y-4 p-4">
+            <div className="flex flex-wrap items-center gap-2 rounded-xl bg-rose-50 p-3 text-sm">
+              <button
+                onClick={() => fetchHotspotUsers()}
+                disabled={loading}
+                className="rounded-lg bg-white px-3 py-1.5 font-semibold text-rose-700 ring-1 ring-rose-200 hover:bg-rose-50 disabled:opacity-50"
+              >
+                🔄 Refresh จาก MikroTik
+              </button>
+              {canImportUsers && (
+                <button
+                  onClick={() => { setShowAddMikrotikUser(true); fetchProfiles(); }}
+                  className="rounded-lg bg-rose-600 px-3 py-1.5 font-semibold text-white hover:bg-rose-700"
+                >
+                  ➕ เพิ่ม User ใหม่
+                </button>
+              )}
+              <span className="ml-auto rounded-full bg-white px-3 py-1 text-rose-700 ring-1 ring-rose-200">
+                ทั้งหมด <span className="font-bold">{filteredMikrotikUsers.length}</span> รายการ
+              </span>
+            </div>
+
+            {filteredMikrotikUsers.length === 0 ? (
+              <div className="py-12 text-center text-gray-500">
+                {loading ? 'กำลังโหลด...' : 'ไม่พบ user บน MikroTik'}
+              </div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm text-black">
+                    <thead className="bg-rose-50 text-gray-900">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Username</th>
+                        <th className="px-4 py-3 font-semibold">Profile</th>
+                        <th className="px-4 py-3 font-semibold">สถานะ</th>
+                        <th className="px-4 py-3 font-semibold">Last Login</th>
+                        <th className="px-4 py-3 font-semibold">Comment</th>
+                        <th className="px-4 py-3 font-semibold">จัดการ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {paginatedMikrotikUsers.map((u) => (
+                        <tr key={u.id || u.name} className={`align-top hover:bg-rose-50/30 ${u.disabled ? 'bg-amber-50/30' : 'bg-green-50/20'}`}>
+                          <td className="px-4 py-3 font-medium">{u.name}</td>
+                          <td className="px-4 py-3">{u.profile || 'default'}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${u.disabled ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+                              {u.disabled ? '🔴 Disabled' : '🟢 Active'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-gray-500">{u['last-login'] || '-'}</td>
+                          <td className="px-4 py-3 text-xs text-gray-500 max-w-[140px] truncate">{u.comment || '-'}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap gap-2">
+                              {canEditUsers && (
+                                <button
+                                  onClick={() => {
+                                    setMikrotikEditUser(u.name);
+                                    setMikrotikEditPayload({ password: '', profile: u.profile || 'default', comment: u.comment || '' });
+                                    fetchProfiles();
+                                  }}
+                                  className="rounded-lg bg-cyan-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-cyan-600"
+                                >
+                                  ✏️ Edit
+                                </button>
+                              )}
+                              {canEditUsers && (
+                                <button
+                                  onClick={() => handleMikrotikDirectAction(u.name, u.disabled ? 'enable' : 'disable')}
+                                  disabled={loading}
+                                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition disabled:bg-gray-400 ${u.disabled ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700'}`}
+                                >
+                                  {u.disabled ? '🟢 Enable' : '⛔ Disable'}
+                                </button>
+                              )}
+                              {canDeleteUsers && (
+                                <button
+                                  onClick={() => handleMikrotikDirectAction(u.name, 'delete')}
+                                  disabled={loading}
+                                  className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:bg-gray-400"
+                                >
+                                  🗑️ Delete
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {filteredMikrotikUsers.length > mikrotikItemsPerPage && (
+                  <div className="flex items-center justify-between border-t border-gray-200 bg-slate-50 px-4 py-3">
+                    <p className="text-sm text-slate-600">
+                      หน้า <span className="font-semibold">{safeMikrotikPage}</span> / <span className="font-semibold">{mikrotikTotalPages}</span>
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setMikrotikPage((p) => Math.max(1, p - 1))} disabled={safeMikrotikPage === 1} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-black disabled:opacity-50">ก่อนหน้า</button>
+                      <button onClick={() => setMikrotikPage((p) => Math.min(mikrotikTotalPages, p + 1))} disabled={safeMikrotikPage === mikrotikTotalPages} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-black disabled:opacity-50">ถัดไป</button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        ) : activeTab === 'batch' ? (
           batchUsers.length === 0 ? (
             <div className="px-6 py-12 text-center text-gray-500">
               ยังไม่มีรายการจากการ Generate หรือ Import ไฟล์
@@ -1607,6 +2295,7 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
                       <th className="px-4 py-3 font-semibold">Username</th>
                       <th className="px-4 py-3 font-semibold">Password</th>
                       <th className="px-4 py-3 font-semibold">Profile</th>
+                      <th className="px-4 py-3 font-semibold">ประเภท</th>
                       <th className="px-4 py-3 font-semibold">สถานะ MikroTik</th>
                       <th className="px-4 py-3 font-semibold">จัดการ</th>
                     </tr>
@@ -1657,6 +2346,13 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
                                 ))
                               )}
                             </select>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                              (user.sourceType || user.type) === 'imported' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {(user.sourceType || user.type) === 'imported' ? '📂 Import' : '🔧 Gen'}
+                            </span>
                           </td>
                           <td className="px-4 py-3">
                             <span
@@ -1721,6 +2417,16 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
             <table className="w-full text-left text-sm text-black">
               <thead className="bg-gray-50 text-gray-900">
                 <tr>
+                  {activeTab === 'pending' && (
+                    <th className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={selectedPendingRequests.length > 0 && selectedPendingRequests.length === filteredRequests.length}
+                        onChange={(e) => setSelectedPendingRequests(e.target.checked ? filteredRequests.map((r) => r.id) : [])}
+                      />
+                    </th>
+                  )}
                   <th className="px-4 py-3 font-semibold">ชื่อ</th>
                   <th className="px-4 py-3 font-semibold">Username</th>
                   <th className="px-4 py-3 font-semibold">Email</th>
@@ -1741,6 +2447,19 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
                           ? 'bg-amber-50/40'
                           : 'bg-green-50/30'
                     }`}>
+                      {activeTab === 'pending' && (
+                        <td className="px-4 py-4">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4"
+                            checked={selectedPendingRequests.includes(item.id)}
+                            onChange={(e) => setSelectedPendingRequests(e.target.checked
+                              ? [...selectedPendingRequests, item.id]
+                              : selectedPendingRequests.filter((id) => id !== item.id)
+                            )}
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-4 font-medium">{item.fullName}</td>
                       <td className="px-4 py-4">{item.username}</td>
                       <td className="px-4 py-4">{item.email}</td>
@@ -1811,7 +2530,7 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
           </div>
         )}
 
-        {activeItems.length > 0 && (
+        {activeTab !== 'mikrotik' && activeItems.length > 0 && (
           <div className="flex flex-col gap-3 border-t border-gray-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-slate-600">
               แสดง <span className="font-semibold">{pageStart}-{pageEnd}</span> จาก <span className="font-semibold">{activeItems.length}</span> รายการ
@@ -1820,14 +2539,14 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
               <button
                 onClick={() => setCurrentPage(1)}
                 disabled={safeCurrentPage === 1}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-black disabled:cursor-not-allowed disabled:opacity-50"
               >
                 «
               </button>
               <button
                 onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
                 disabled={safeCurrentPage === 1}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-black disabled:cursor-not-allowed disabled:opacity-50"
               >
                 ก่อนหน้า
               </button>
@@ -1837,14 +2556,14 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
               <button
                 onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
                 disabled={safeCurrentPage === totalPages}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-black disabled:cursor-not-allowed disabled:opacity-50"
               >
                 ถัดไป
               </button>
               <button
                 onClick={() => setCurrentPage(totalPages)}
                 disabled={safeCurrentPage === totalPages}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-black disabled:cursor-not-allowed disabled:opacity-50"
               >
                 »
               </button>
@@ -1910,6 +2629,15 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
                   )}
                 </select>
               </label>
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-black">วันหมดอายุ (ว/ด/ป) — เว้นว่างเพื่อไม่กำหนด</span>
+                <input
+                  type="date"
+                  value={editPayload.expiryDate}
+                  onChange={(e) => setEditPayload({ ...editPayload, expiryDate: e.target.value })}
+                  className="w-full rounded border border-gray-300 px-4 py-2 text-black bg-white"
+                />
+              </label>
 
               <div className="flex gap-2 pt-4">
                 <button
@@ -1926,6 +2654,174 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
                   className="flex-1 rounded bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold transition"
                 >
                   {loading ? 'บันทึก...' : 'บันทึก'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Edit Saved User Modal */}
+      {editSavedUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-2xl text-black">
+            <h3 className="text-xl font-bold text-black">✏️ แก้ไข Generated User: {editSavedUser.username}</h3>
+            <form className="mt-4 space-y-4">
+              <label className="space-y-1 block">
+                <span className="text-sm font-medium text-black">Password</span>
+                <input type="text" value={editSavedPayload.password}
+                  onChange={(e) => setEditSavedPayload({ ...editSavedPayload, password: e.target.value })}
+                  className="w-full rounded border border-gray-300 px-4 py-2 text-black bg-white" />
+              </label>
+              <label className="space-y-1 block">
+                <span className="text-sm font-medium text-black">Profile</span>
+                <select value={editSavedPayload.profile}
+                  onChange={(e) => setEditSavedPayload({ ...editSavedPayload, profile: e.target.value })}
+                  className="w-full rounded border border-gray-300 px-4 py-2 text-black bg-white">
+                  {profiles.length === 0 ? <option value="default">default</option>
+                    : profiles.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                </select>
+              </label>
+              <label className="space-y-1 block">
+                <span className="text-sm font-medium text-black">Batch Label</span>
+                <input type="text" value={editSavedPayload.batchLabel}
+                  onChange={(e) => setEditSavedPayload({ ...editSavedPayload, batchLabel: e.target.value })}
+                  className="w-full rounded border border-gray-300 px-4 py-2 text-black bg-white"
+                  placeholder="ชื่อ batch" />
+              </label>
+              <label className="space-y-1 block">
+                <span className="text-sm font-medium text-black">วันหมดอายุ</span>
+                <input type="date" value={editSavedPayload.expiryDate}
+                  onChange={(e) => setEditSavedPayload({ ...editSavedPayload, expiryDate: e.target.value })}
+                  className="w-full rounded border border-gray-300 px-4 py-2 text-black bg-white" />
+              </label>
+              <label className="space-y-1 block">
+                <span className="text-sm font-medium text-black">Comment</span>
+                <input type="text" value={editSavedPayload.comment}
+                  onChange={(e) => setEditSavedPayload({ ...editSavedPayload, comment: e.target.value })}
+                  className="w-full rounded border border-gray-300 px-4 py-2 text-black bg-white" />
+              </label>
+              <div className="flex gap-2 pt-4">
+                <button type="button" onClick={() => setEditSavedUser(null)} className="flex-1 rounded bg-gray-300 hover:bg-gray-400 px-4 py-2 font-semibold text-black">ยกเลิก</button>
+                <button type="button" onClick={handleSaveEditSavedUser} disabled={loading} className="flex-1 rounded bg-teal-600 hover:bg-teal-700 disabled:bg-gray-400 text-white font-semibold">
+                  {loading ? 'บันทึก...' : 'บันทึก'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MikroTik Edit User Modal */}
+      {mikrotikEditUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-2xl text-black">
+            <h3 className="text-2xl font-bold text-black">✏️ แก้ไข MikroTik User: {mikrotikEditUser}</h3>
+            <form className="mt-6 space-y-4">
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-black">รหัสผ่านใหม่ (เว้นว่างเพื่อไม่เปลี่ยน)</span>
+                <input
+                  type="password"
+                  value={mikrotikEditPayload.password}
+                  onChange={(e) => setMikrotikEditPayload({ ...mikrotikEditPayload, password: e.target.value })}
+                  className="w-full rounded border border-gray-300 px-4 py-2 text-black bg-white"
+                  placeholder="ใส่รหัสผ่านใหม่"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-black">Profile</span>
+                <select
+                  value={mikrotikEditPayload.profile}
+                  onChange={(e) => setMikrotikEditPayload({ ...mikrotikEditPayload, profile: e.target.value })}
+                  className="w-full rounded border border-gray-300 px-4 py-2 text-black bg-white"
+                >
+                  {profiles.length === 0 ? (
+                    <option value="default">default</option>
+                  ) : (
+                    profiles.map((p) => (
+                      <option key={p.name} value={p.name}>{p.name}</option>
+                    ))
+                  )}
+                </select>
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-black">Comment</span>
+                <input
+                  type="text"
+                  value={mikrotikEditPayload.comment}
+                  onChange={(e) => setMikrotikEditPayload({ ...mikrotikEditPayload, comment: e.target.value })}
+                  className="w-full rounded border border-gray-300 px-4 py-2 text-black bg-white"
+                  placeholder="หมายเหตุ"
+                />
+              </label>
+              <div className="flex gap-2 pt-4">
+                <button type="button" onClick={() => setMikrotikEditUser(null)} className="flex-1 rounded bg-gray-300 hover:bg-gray-400 px-4 py-2 font-semibold transition text-black">ยกเลิก</button>
+                <button type="button" onClick={handleMikrotikEditSave} disabled={loading} className="flex-1 rounded bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold transition">
+                  {loading ? 'บันทึก...' : 'บันทึก'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add MikroTik User Modal */}
+      {showAddMikrotikUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-2xl text-black">
+            <h3 className="text-2xl font-bold text-black">➕ เพิ่ม User ใหม่ใน MikroTik</h3>
+            <form className="mt-6 space-y-4">
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-black">Username *</span>
+                <input
+                  type="text"
+                  value={addMikrotikPayload.name}
+                  onChange={(e) => setAddMikrotikPayload({ ...addMikrotikPayload, name: e.target.value })}
+                  className="w-full rounded border border-gray-300 px-4 py-2 text-black bg-white"
+                  placeholder="เช่น user001"
+                  required
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-black">Password *</span>
+                <input
+                  type="text"
+                  value={addMikrotikPayload.password}
+                  onChange={(e) => setAddMikrotikPayload({ ...addMikrotikPayload, password: e.target.value })}
+                  className="w-full rounded border border-gray-300 px-4 py-2 text-black bg-white"
+                  placeholder="รหัสผ่าน"
+                  required
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-black">Profile</span>
+                <select
+                  value={addMikrotikPayload.profile}
+                  onChange={(e) => setAddMikrotikPayload({ ...addMikrotikPayload, profile: e.target.value })}
+                  className="w-full rounded border border-gray-300 px-4 py-2 text-black bg-white"
+                >
+                  {profiles.length === 0 ? (
+                    <option value="default">default</option>
+                  ) : (
+                    profiles.map((p) => (
+                      <option key={p.name} value={p.name}>{p.name}</option>
+                    ))
+                  )}
+                </select>
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-black">Comment</span>
+                <input
+                  type="text"
+                  value={addMikrotikPayload.comment}
+                  onChange={(e) => setAddMikrotikPayload({ ...addMikrotikPayload, comment: e.target.value })}
+                  className="w-full rounded border border-gray-300 px-4 py-2 text-black bg-white"
+                  placeholder="หมายเหตุ (ไม่บังคับ)"
+                />
+              </label>
+              <div className="flex gap-2 pt-4">
+                <button type="button" onClick={() => setShowAddMikrotikUser(false)} className="flex-1 rounded bg-gray-300 hover:bg-gray-400 px-4 py-2 font-semibold transition text-black">ยกเลิก</button>
+                <button type="button" onClick={handleMikrotikAddUser} disabled={loading} className="flex-1 rounded bg-rose-600 hover:bg-rose-700 disabled:bg-gray-400 text-white font-semibold transition">
+                  {loading ? 'กำลังเพิ่ม...' : 'เพิ่ม User'}
                 </button>
               </div>
             </form>

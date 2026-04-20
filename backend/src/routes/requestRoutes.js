@@ -6,6 +6,7 @@ const {
   getDailySummary,
   importBatchUsers,
   approveRequest,
+  bulkApproveRequests,
   cancelApproval,
   disableRequestUser,
   enableRequestUser,
@@ -26,6 +27,7 @@ router.get('/daily-summary', protect, requireAnySectionAccess('users', 'reports'
 router.get('/profiles', protect, requireActionAccess('users', 'view'), getProfiles);
 router.get('/test/mikrotik', protect, requireActionAccess('mikrotik', 'view'), testMikrotik);
 router.post('/batch-import', protect, requireActionAccess('users', 'import'), auditAction({ action: 'BATCH_IMPORT_USERS', entityType: 'hotspot_user' }), importBatchUsers);
+router.post('/bulk-approve', protect, requireActionAccess('users', 'approve'), auditAction({ action: 'BULK_APPROVE_USERS', entityType: 'user_request' }), bulkApproveRequests);
 router.post('/:id/approve', protect, requireActionAccess('users', 'approve'), auditAction({ action: 'REQUEST_APPROVE', entityType: 'user_request' }), approveRequest);
 router.post('/:id/cancel-approval', protect, requireActionAccess('users', 'approve'), auditAction({ action: 'REQUEST_CANCEL_APPROVAL', entityType: 'user_request' }), cancelApproval);
 router.post('/:id/disable-user', protect, requireActionAccess('users', 'edit'), auditAction({ action: 'REQUEST_DISABLE_USER', entityType: 'hotspot_user' }), disableRequestUser);

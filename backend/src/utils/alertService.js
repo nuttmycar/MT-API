@@ -12,6 +12,7 @@ const DEFAULT_ALERT_CONFIG = {
     cpuHigh: true,
     cpuThreshold: 85,
     backupError: true,
+    mikrotikOffline: true,
   },
   channels: {
     line: {
@@ -204,6 +205,11 @@ const maybeDispatchSystemAlerts = async ({ notifications = [], pendingApprovals 
 
   if (triggers.backupError) {
     const item = notifications.find((entry) => entry.id === 'backup-error');
+    if (item) matches.push(item);
+  }
+
+  if (triggers.mikrotikOffline) {
+    const item = notifications.find((entry) => entry.id === 'mikrotik-offline');
     if (item) matches.push(item);
   }
 

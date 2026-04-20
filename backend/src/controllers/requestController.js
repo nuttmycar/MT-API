@@ -8,6 +8,7 @@ const {
   disableHotspotUser,
   enableHotspotUser,
 } = require('../utils/mikrotik');
+const { sendApprovalEmail } = require('../utils/emailService');
 
 const buildRequestWhereClause = (query = {}) => {
   const where = {};
@@ -425,8 +426,54 @@ exports.importBatchUsers = async (req, res, next) => {
   }
 };
 
-exports.approveRequest = async (req, res, next) => {
+exports.bulkApproveRequests = async (req, res, next) => {
   try {
+    const UserRequest = getUserRequest();
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (ids.length === 0) {
+      return res.status(400).json({ message: 'No IDs provided for bulk approve' });
+    }
+
+    const approved = [];
+    const failed = [];
+
+    for (const id of ids) {
+      try {
+        const request = await UserRequest.findByPk(id);
+        if (!request || request.status === 'approved') {
+          failed.push({ id, message: !request ? 'Not found' : 'Already approved' });
+          continue;
+        }
+        try {
+          await addHotspotUser({
+            name: request.username,
+            password: request.password,
+            profile: request.profile,
+            comment: `Bulk approved ${request.username}`,
+          });
+        } catch (mikrotikErr) {
+          console.warn(`[BulkApprove] MikroTik failed for ${request.username}:`, mikrotikErr.message);
+        }
+        request.status = 'approved';
+        request.approvedAt = new Date();
+        await request.save();
+        approved.push({ id, username: request.username });
+      } catch (err) {
+        failed.push({ id, message: err.message });
+      }
+    }
+
+    return res.json({
+      message: `Approved ${approved.length} user(s)`,
+      approved,
+      failed,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.approveRequest = async (req, res, next) => {  try {
     const UserRequest = getUserRequest();
     const { id } = req.params;
     const request = await UserRequest.findByPk(id);
@@ -462,6 +509,14 @@ exports.approveRequest = async (req, res, next) => {
     request.status = 'approved';
     request.approvedAt = new Date();
     await request.save();
+
+    // Send approval email (non-blocking)
+    sendApprovalEmail({
+      fullName: request.fullName,
+      username: request.username,
+      password: request.password,
+      email: request.email,
+    }).catch(err => console.warn('[ApproveRequest] Email notification failed:', err.message));
 
     console.log(`[ApproveRequest] Success! User approved and saved to database`);
     return res.json({ 
@@ -593,7 +648,7 @@ exports.updateRequest = async (req, res, next) => {
   try {
     const UserRequest = getUserRequest();
     const { id } = req.params;
-    const { fullName, email, password, profile } = req.body;
+    const { fullName, email, password, profile, expiryDate } = req.body;
 
     const request = await UserRequest.findByPk(id);
     if (!request) {
@@ -605,6 +660,7 @@ exports.updateRequest = async (req, res, next) => {
     if (email) request.email = email;
     if (password) request.password = password;
     if (profile) request.profile = profile;
+    if (expiryDate !== undefined) request.expiryDate = expiryDate || null;
 
     await request.save();
     return res.json(request);

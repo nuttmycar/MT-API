@@ -4,6 +4,7 @@ const { protect, requireAnySectionAccess, requireActionAccess } = require('../mi
 const { getUserRequest } = require('../models/UserRequest');
 const { getBackupSchedulerStatus } = require('../utils/backupService');
 const { maybeDispatchSystemAlerts } = require('../utils/alertService');
+const { getMikrotikStatus } = require('../utils/mikrotik');
 
 const router = express.Router();
 
@@ -81,6 +82,26 @@ router.get('/notifications', protect, requireAnySectionAccess('system', 'reports
         level: 'warning',
         title: 'CPU ใช้งานสูง',
         message: `CPU กำลังใช้งานประมาณ ${quick.cpu}%`,
+      });
+    }
+
+    // Check MikroTik connectivity
+    try {
+      const mtStatus = await getMikrotikStatus();
+      if (!mtStatus?.connected) {
+        notifications.push({
+          id: 'mikrotik-offline',
+          level: 'error',
+          title: 'MikroTik ไม่ตอบสนอง',
+          message: 'ไม่สามารถเชื่อมต่อกับ MikroTik Router ได้ในขณะนี้',
+        });
+      }
+    } catch {
+      notifications.push({
+        id: 'mikrotik-offline',
+        level: 'error',
+        title: 'MikroTik ไม่ตอบสนอง',
+        message: 'ไม่สามารถเชื่อมต่อกับ MikroTik Router ได้ในขณะนี้',
       });
     }
 

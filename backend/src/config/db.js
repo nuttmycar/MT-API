@@ -98,6 +98,20 @@ const connectDB = async () => {
     console.log('[DB] Syncing database...');
     await sequelize.sync({ force: false, alter: false });
     console.log('[DB] ✓ Database synced');
+
+    // Inline migration: add `type` column to generated_users if missing
+    try {
+      const [cols] = await sequelize.query("SHOW COLUMNS FROM `generated_users` LIKE 'type'");
+      if (cols.length === 0) {
+        await sequelize.query(
+          "ALTER TABLE `generated_users` ADD COLUMN `type` ENUM('generated','imported') NOT NULL DEFAULT 'generated' AFTER `fullName`"
+        );
+        await sequelize.query("ALTER TABLE `generated_users` ADD KEY `idx_gen_type` (`type`)");
+        console.log('[DB] ✓ Migration: added generated_users.type column');
+      }
+    } catch (_migErr) {
+      // generated_users table may not exist yet (first run) — skip
+    }
     
     return sequelize;
   } catch (error) {
