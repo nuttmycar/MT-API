@@ -36,6 +36,9 @@ services:
       PORT: 3000
       DB_HOST: db
       DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-mt_api}
+      DB_USER: ${DB_USER:-sa}
+      DB_PASS: ${DB_PASS:-youpassword}
     depends_on:
       db:
         condition: service_healthy

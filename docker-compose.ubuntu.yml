@@ -2,10 +2,8 @@
 # Usage: docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml up -d
 # This file contains Ubuntu-specific optimizations and configurations
 
-version: '3.8'
-
 services:
-  mt-api-db:
+  db:
     # MariaDB with Ubuntu-optimized settings
     environment:
       # Performance tuning for Ubuntu
@@ -26,7 +24,7 @@ services:
           cpus: '0.5'
           memory: 512M
 
-  mt-api-backend:
+  backend:
     # Node.js backend
     environment:
       # Node.js optimization for production
@@ -48,13 +46,7 @@ services:
           cpus: '0.5'
           memory: 256M
     
-    # Restart policy
-    restart_policy:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 3
-
-  mt-api-frontend:
+  frontend:
     # Nginx frontend
     environment:
       TZ: "UTC"
@@ -69,20 +61,10 @@ services:
           cpus: '0.25'
           memory: 128M
     
-    # Restart policy
-    restart_policy:
-      condition: on-failure
-      delay: 5s
-      max_attempts: 3
-
 # Ubuntu-specific volume configuration
 volumes:
-  db_data:
+  mariadb_data:
     driver: local
-    driver_opts:
-      type: tmpfs
-      device: tmpfs
-      o: "size=100m,uid=33,gid=33"  # MariaDB UID/GID on Ubuntu
 
 # Network configuration
 networks:

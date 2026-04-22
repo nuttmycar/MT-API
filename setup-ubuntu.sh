@@ -245,7 +245,7 @@ wait_for_services() {
     
     print_info "Waiting for database..."
     for i in {1..30}; do
-        if docker compose -f docker-compose.prod.yml exec -T mt-api-db mysqladmin ping -h localhost &> /dev/null; then
+        if docker compose -f docker-compose.prod.yml exec -T db mysqladmin ping -h localhost &> /dev/null; then
             print_success "Database is ready"
             break
         fi
