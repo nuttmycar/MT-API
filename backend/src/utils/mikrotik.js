@@ -19,7 +19,13 @@ const normalizeApiPort = (rawPort) => {
 };
 
 const getRequestClient = (port) => (normalizeRestPort(port) === 443 ? https : http);
-const shouldUseLegacyApi = (config = {}) => String(config.os_version || 'v7').toLowerCase() === 'v6';
+const normalizeOsVersion = (value) => {
+  const raw = String(value || 'v7').trim().toLowerCase();
+  if (raw === 'v6' || raw === '6' || raw.startsWith('v6.') || raw.startsWith('6.')) return 'v6';
+  if (raw === 'v7' || raw === '7' || raw.startsWith('v7.') || raw.startsWith('7.')) return 'v7';
+  return 'v7';
+};
+const shouldUseLegacyApi = (config = {}) => normalizeOsVersion(config.os_version) === 'v6';
 
 const readValue = (item = {}, ...keys) => {
   for (const key of keys) {
@@ -853,7 +859,7 @@ exports.updateIpBinding = async (id, binding) => {
     () => restRequest(config.ip, config.port, `/ip/hotspot/ip-binding/${id}`, 'PATCH', payload, config),
     () => withLegacyApi(config, 'Update IP binding', async (client) => {
       const menu = client.menu('/ip hotspot ip-binding');
-      const item = await menu.where('id', id).getOnly();
+      const item = await menu.where('.id', id).getOnly();
 
       if (!item) {
         throw new Error('IP Binding not found');
@@ -876,7 +882,7 @@ exports.disableIpBinding = async (id) => {
     () => restRequest(config.ip, config.port, `/ip/hotspot/ip-binding/${id}`, 'PATCH', { disabled: 'true' }, config),
     () => withLegacyApi(config, 'Disable IP binding', async (client) => {
       const menu = client.menu('/ip hotspot ip-binding');
-      const item = await menu.where('id', id).getOnly();
+      const item = await menu.where('.id', id).getOnly();
 
       if (!item) {
         return false;
@@ -897,7 +903,7 @@ exports.enableIpBinding = async (id) => {
     () => restRequest(config.ip, config.port, `/ip/hotspot/ip-binding/${id}`, 'PATCH', { disabled: 'false' }, config),
     () => withLegacyApi(config, 'Enable IP binding', async (client) => {
       const menu = client.menu('/ip hotspot ip-binding');
-      const item = await menu.where('id', id).getOnly();
+      const item = await menu.where('.id', id).getOnly();
 
       if (!item) {
         return false;
@@ -918,7 +924,7 @@ exports.removeIpBinding = async (id) => {
     () => restRequest(config.ip, config.port, `/ip/hotspot/ip-binding/${id}`, 'DELETE', null, config),
     () => withLegacyApi(config, 'Remove IP binding', async (client) => {
       const menu = client.menu('/ip hotspot ip-binding');
-      const item = await menu.where('id', id).getOnly();
+      const item = await menu.where('.id', id).getOnly();
 
       if (!item) {
         return false;
@@ -989,7 +995,7 @@ exports.updateWalledGarden = async (id, rule) => {
     () => restRequest(config.ip, config.port, `/ip/hotspot/walled-garden/${id}`, 'PATCH', payload, config),
     () => withLegacyApi(config, 'Update Walled Garden', async (client) => {
       const menu = client.menu('/ip hotspot walled-garden');
-      const item = await menu.where('id', id).getOnly();
+      const item = await menu.where('.id', id).getOnly();
 
       if (!item) {
         throw new Error('Walled Garden entry not found');
@@ -1012,7 +1018,7 @@ exports.disableWalledGarden = async (id) => {
     () => restRequest(config.ip, config.port, `/ip/hotspot/walled-garden/${id}`, 'PATCH', { disabled: 'true' }, config),
     () => withLegacyApi(config, 'Disable Walled Garden', async (client) => {
       const menu = client.menu('/ip hotspot walled-garden');
-      const item = await menu.where('id', id).getOnly();
+      const item = await menu.where('.id', id).getOnly();
 
       if (!item) {
         return false;
@@ -1033,7 +1039,7 @@ exports.enableWalledGarden = async (id) => {
     () => restRequest(config.ip, config.port, `/ip/hotspot/walled-garden/${id}`, 'PATCH', { disabled: 'false' }, config),
     () => withLegacyApi(config, 'Enable Walled Garden', async (client) => {
       const menu = client.menu('/ip hotspot walled-garden');
-      const item = await menu.where('id', id).getOnly();
+      const item = await menu.where('.id', id).getOnly();
 
       if (!item) {
         return false;
@@ -1054,7 +1060,7 @@ exports.removeWalledGarden = async (id) => {
     () => restRequest(config.ip, config.port, `/ip/hotspot/walled-garden/${id}`, 'DELETE', null, config),
     () => withLegacyApi(config, 'Remove Walled Garden', async (client) => {
       const menu = client.menu('/ip hotspot walled-garden');
-      const item = await menu.where('id', id).getOnly();
+      const item = await menu.where('.id', id).getOnly();
 
       if (!item) {
         return false;

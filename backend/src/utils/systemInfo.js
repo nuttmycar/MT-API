@@ -2,6 +2,33 @@ const { QueryTypes } = require('sequelize');
 const { getSequelize } = require('../config/db');
 const MikroTikAPI = require('./mikrotikAPI');
 
+const normalizeOsVersion = (value) => {
+  const raw = String(value || 'v7').trim().toLowerCase();
+  if (raw === 'v6' || raw === '6' || raw.startsWith('v6.') || raw.startsWith('6.')) return 'v6';
+  if (raw === 'v7' || raw === '7' || raw.startsWith('v7.') || raw.startsWith('7.')) return 'v7';
+  return 'v7';
+};
+
+const parseSizeToUnit = (value, targetUnit) => {
+  if (value === null || value === undefined || value === '') return 0;
+  if (typeof value === 'number') return value;
+
+  const match = String(value).trim().match(/^([0-9]+(?:\.[0-9]+)?)\s*([KMGT]?B)$/i);
+  if (!match) return Number(value) || 0;
+
+  const amount = Number(match[1]);
+  const unit = match[2].toUpperCase();
+  const toBytes = {
+    B: 1,
+    KB: 1024,
+    MB: 1024 * 1024,
+    GB: 1024 * 1024 * 1024,
+    TB: 1024 * 1024 * 1024 * 1024,
+  };
+  const targetBytes = targetUnit === 'GB' ? toBytes.GB : toBytes.MB;
+  return Math.round((amount * toBytes[unit] / targetBytes) * 100) / 100;
+};
+
 const STATS_CACHE_TTL_MS = 10000;
 let statsCache = {
   value: null,
@@ -30,7 +57,7 @@ const getMikrotikConfig = async () => {
           port: parseInt(config.port, 10) || 80,
           username: config.username,
           password: config.password,
-          os_version: config.os_version || 'v7',
+          os_version: normalizeOsVersion(config.os_version || process.env.MIKROTIK_OS_VERSION),
         };
       }
     }
@@ -43,7 +70,7 @@ const getMikrotikConfig = async () => {
     port: parseInt(process.env.MIKROTIK_PORT, 10) || 80,
     username: process.env.MIKROTIK_USER,
     password: process.env.MIKROTIK_PASS,
-    os_version: process.env.MIKROTIK_OS_VERSION || 'v7',
+    os_version: normalizeOsVersion(process.env.MIKROTIK_OS_VERSION),
   };
 };
 
@@ -57,7 +84,7 @@ const createMikrotikConnection = async () => {
     throw new Error('MikroTik connection settings are missing');
   }
 
-  console.log(`[SystemInfo] Connecting to MikroTik REST ${config.ip}:${config.port}...`);
+  console.log(`[SystemInfo] Connecting to MikroTik ${config.ip}:${config.port} (${config.os_version})...`);
 
   const api = new MikroTikAPI(config);
   await api.testConnection();
@@ -70,26 +97,25 @@ const createMikrotikConnection = async () => {
  */
 const getMikrotikResourceInfo = async (client) => {
   try {
-    console.log('[SystemInfo] Fetching /system/resource from MikroTik...');
+    console.log('[SystemInfo] Fetching system information from MikroTik...');
 
-    const resourceResponse = await client.restRequest('/system/resource');
-    const identityResponse = await client.restRequest('/system/identity');
-    const resource = Array.isArray(resourceResponse) ? (resourceResponse[0] || {}) : (resourceResponse || {});
-    const identity = Array.isArray(identityResponse) ? (identityResponse[0] || {}) : (identityResponse || {});
+    const systemInfo = await client.getSystemInfo();
 
     console.log('[SystemInfo] ✓ Resource data received');
 
     return {
-      cpuLoad: Number(resource['cpu-load']) || 0,
-      cpuCount: Number(resource['cpu-count']) || 1,
-      freeMemory: Math.round((Number(resource['free-memory']) || 0) / (1024 * 1024)),
-      totalMemory: Math.round((Number(resource['total-memory']) || 0) / (1024 * 1024)),
-      free_hdd_space: Math.round(((Number(resource['free-hdd-space']) || 0) / (1024 * 1024 * 1024)) * 100) / 100,
-      total_hdd_space: Math.round(((Number(resource['total-hdd-space']) || 0) / (1024 * 1024 * 1024)) * 100) / 100,
-      uptime: resource.uptime || '0s',
-      boardName: resource['board-name'] || identity.name || 'MikroTik',
-      version: resource.version || 'Unknown',
-      architecture: resource['architecture-name'] || resource.architecture || 'Unknown'
+      cpuLoad: Number(systemInfo.cpuLoad) || 0,
+      cpuCount: Number(systemInfo.cpu) || 1,
+      freeMemory: parseSizeToUnit(systemInfo.freememory, 'MB'),
+      totalMemory: parseSizeToUnit(systemInfo.totalmemory, 'MB'),
+      free_hdd_space: parseSizeToUnit(systemInfo.freedisk, 'GB'),
+      total_hdd_space: parseSizeToUnit(systemInfo.totaldisk, 'GB'),
+      uptime: systemInfo.uptime || '0s',
+      boardName: systemInfo['board-name'] || systemInfo.routerName || 'MikroTik',
+      version: systemInfo.version || 'Unknown',
+      architecture: systemInfo.architecture || 'Unknown',
+      transport: systemInfo.transport || client.lastTransport || 'UNKNOWN',
+      dataSource: systemInfo.dataSource || 'REAL',
     };
   } catch (error) {
     console.error('[SystemInfo] Error fetching resource info:', error.message);
@@ -155,7 +181,8 @@ exports.getSystemStats = async ({ includeProcesses = false, forceRefresh = false
 
     const stats = {
       timestamp: new Date().toISOString(),
-      source: 'MikroTik RouterOS',
+      source: resourceInfo.dataSource === 'REAL' ? 'MikroTik RouterOS' : resourceInfo.dataSource,
+      transport: resourceInfo.transport,
       cpu: {
         usage: resourceInfo.cpuLoad,
         cores: resourceInfo.cpuCount,
@@ -233,7 +260,8 @@ exports.getSystemQuickInfo = async () => {
 
     const quickInfo = {
       timestamp: new Date().toISOString(),
-      source: 'MikroTik RouterOS',
+      source: resourceInfo.dataSource === 'REAL' ? 'MikroTik RouterOS' : resourceInfo.dataSource,
+      transport: resourceInfo.transport,
       cpu: resourceInfo.cpuLoad,
       ram: {
         total: resourceInfo.totalMemory,

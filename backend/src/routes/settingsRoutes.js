@@ -42,6 +42,13 @@ const {
 
 const router = express.Router();
 
+const normalizeOsVersion = (value) => {
+  const raw = String(value || 'v7').trim().toLowerCase();
+  if (raw === 'v6' || raw === '6' || raw.startsWith('v6.') || raw.startsWith('6.')) return 'v6';
+  if (raw === 'v7' || raw === '7' || raw.startsWith('v7.') || raw.startsWith('7.')) return 'v7';
+  return 'v7';
+};
+
 const DEFAULT_APP_BRANDING = {
   appName: 'MT-API',
   appSubtitle: 'MikroTik Hotspot Management System',
@@ -134,10 +141,7 @@ const getMikrotikConfig = async () => {
     if (result?.[0]?.setting_value) {
       try {
         const config = JSON.parse(result[0].setting_value);
-        // Ensure os_version exists (default v7)
-        if (!config.os_version) {
-          config.os_version = 'v7';
-        }
+        config.os_version = normalizeOsVersion(config.os_version || process.env.MIKROTIK_OS_VERSION);
         return config;
       } catch (e) {
         console.warn('[MikroTik] Error parsing database config, falling back to .env');
@@ -150,7 +154,7 @@ const getMikrotikConfig = async () => {
       port: parseInt(process.env.MIKROTIK_PORT) || 8728,
       username: process.env.MIKROTIK_USER,
       password: process.env.MIKROTIK_PASS,
-      os_version: 'v7'
+      os_version: normalizeOsVersion(process.env.MIKROTIK_OS_VERSION)
     };
   } catch (error) {
     console.error('[MikroTik] Error getting config:', error);
@@ -160,7 +164,7 @@ const getMikrotikConfig = async () => {
       port: parseInt(process.env.MIKROTIK_PORT) || 8728,
       username: process.env.MIKROTIK_USER,
       password: process.env.MIKROTIK_PASS,
-      os_version: 'v7'
+      os_version: normalizeOsVersion(process.env.MIKROTIK_OS_VERSION)
     };
   }
 };
@@ -171,8 +175,8 @@ const buildMikrotikDiagnostics = (config = {}, activeTransport = 'UNKNOWN') => {
   const restPort = rawPort === 8728 ? 80 : rawPort === 8729 ? 443 : rawPort;
 
   return {
-    osVersion: config.os_version || 'v7',
-    preferredTransport: (config.os_version || 'v7') === 'v6' ? 'ROS-API' : 'REST',
+    osVersion: normalizeOsVersion(config.os_version),
+    preferredTransport: normalizeOsVersion(config.os_version) === 'v6' ? 'ROS-API' : 'REST',
     activeTransport,
     apiPort,
     restPort,
@@ -1125,7 +1129,7 @@ router.post('/mikrotik', protect, requireActionAccess('settings', 'update'), aud
     }
     
     // Validate OS version
-    const version = os_version && (os_version === 'v6' || os_version === 'v7') ? os_version : 'v7';
+    const version = normalizeOsVersion(os_version);
     
     const config = {
       ip,

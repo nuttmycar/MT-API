@@ -31,6 +31,13 @@ const normalizeBoolean = (value) => {
   return ['true', '1', 'yes', 'on', 'enabled'].includes(String(value || '').toLowerCase());
 };
 
+const normalizeOsVersion = (value) => {
+  const raw = String(value || 'v7').trim().toLowerCase();
+  if (raw === 'v6' || raw === '6' || raw.startsWith('v6.') || raw.startsWith('6.')) return 'v6';
+  if (raw === 'v7' || raw === '7' || raw.startsWith('v7.') || raw.startsWith('7.')) return 'v7';
+  return 'v7';
+};
+
 /**
  * RouterOS REST API Client
  * Based on: https://gist.github.com/AdroitAdorKhan/59e7691e93554c13b574fa8e1332de4a
@@ -46,7 +53,7 @@ class MikroTikAPI {
     this.username = config.username;
     this.password = config.password;
     this.timeout = config.timeout || 5000;
-    this.osVersion = config.os_version || 'v7';
+    this.osVersion = normalizeOsVersion(config.os_version);
     this.preferLegacyApi = this.osVersion === 'v6';
     this.lastTransport = this.preferLegacyApi ? 'ROS-API (preferred)' : 'REST (preferred)';
     
