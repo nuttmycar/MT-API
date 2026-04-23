@@ -42,6 +42,81 @@
   APP_PORT=8080 docker compose -f docker-compose.prod.yml up -d --build
   ```
 
+### How-To: อัปเดตหน้างานจาก GitHub (เครื่องที่ deploy ไปแล้ว)
+
+ใช้ขั้นตอนนี้เมื่อเครื่อง production/staging ใช้งานเวอร์ชันเก่าอยู่แล้ว และต้องการอัปเดตเป็นโค้ดล่าสุดจาก GitHub โดยไม่ล้างข้อมูลเดิม
+
+#### 1) Pre-check ก่อนอัปเดต
+```bash
+cd /path/to/MT-API
+git status
+docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml ps
+```
+
+#### 2) Backup ก่อนอัปเดต (แนะนำมาก)
+```bash
+# เก็บ commit ปัจจุบันไว้สำหรับ rollback
+git rev-parse --short HEAD
+
+# Backup DB
+docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml exec mt-api-db \
+   mysqldump -u mt_user -p mt_api > backup_before_update_$(date +%Y%m%d_%H%M%S).sql
+```
+
+#### 3) ดึงโค้ดล่าสุดจาก GitHub
+```bash
+git fetch origin
+git checkout main
+git pull origin main
+```
+
+#### 4) Rebuild และ restart เฉพาะ service ที่เปลี่ยน
+```bash
+docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml up -d --build backend frontend
+```
+
+ถ้าต้องการให้ชัวร์ทั้ง stack:
+```bash
+docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml up -d --build
+```
+
+#### 5) ตรวจสุขภาพหลังอัปเดต
+```bash
+docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml ps
+docker logs --tail=120 mt-api-backend
+curl -f http://localhost/api/health
+```
+
+#### 6) Smoke test ฟีเจอร์ที่เปลี่ยนรอบล่าสุด
+- หน้า Settings ต้องมีส่วน `ตั้งค่าคูปอง QR`
+- บันทึก 3 ค่าได้: `Hotspot Login URL`, `ชื่อแบรนด์บนคูปอง`, `หัวข้อบนคูปอง`
+- หน้า User Management แสดง/พิมพ์คูปองโดยใช้ค่าจาก Settings ล่าสุด
+
+#### 7) Rollback (กรณีพบปัญหา)
+```bash
+# ดู commit ล่าสุด
+git log --oneline -n 5
+
+# ย้อนกลับไป commit ที่ต้องการ
+git checkout main
+git reset --hard <COMMIT_OLD>
+
+# rebuild กลับไปเวอร์ชันเดิม
+docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml up -d --build
+```
+
+ถ้าต้องคืนฐานข้อมูลจากไฟล์ backup:
+```bash
+cat backup_before_update_YYYYMMDD_HHMMSS.sql | \
+   docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml exec -T mt-api-db \
+   mysql -u mt_user -p mt_api
+```
+
+#### 8) แนวทางลด downtime
+- รันคำสั่งอัปเดตช่วงเวลาที่ผู้ใช้งานน้อย
+- หลีกเลี่ยงการลบ volume ถ้าไม่จำเป็น
+- หลีกเลี่ยง `down` ทั้งระบบถ้าเพียงแค่อัปเดตแอป (ใช้ `up -d --build backend frontend` แทน)
+
 ---
 
 ## Option B: VM / VPS + PM2 + Nginx

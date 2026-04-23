@@ -14,7 +14,8 @@
 5. [Configuration](#configuration)
 6. [Common Issues](#common-issues)
 7. [Maintenance](#maintenance)
-8. [What's New](#whats-new)
+8. [Update From GitHub (Field Runbook)](#update-from-github-field-runbook)
+9. [What's New](#whats-new)
 
 ---
 
@@ -421,16 +422,54 @@ cat manual_backup_20260416.sql | docker compose -f docker-compose.prod.yml exec 
 ### Updating the Application
 
 ```bash
-# Pull latest code
+# 1) Pull latest code
+git fetch origin
+git checkout main
 git pull origin main
 
-# Rebuild containers
-docker compose -f docker-compose.prod.yml down
-docker compose -f docker-compose.prod.yml up -d --build
+# 2) Rebuild only app services (lower downtime)
+docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml up -d --build backend frontend
 
-# Check migrations
-docker compose -f docker-compose.prod.yml logs mt-api-backend | grep migration
+# 3) Verify
+docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml ps
+curl -f http://localhost:8080/api/health
+docker logs --tail=120 mt-api-backend
 ```
+
+For full update/rollback SOP, see `UPDATE_RUNBOOK.md` or `DEPLOYMENT.md`.
+
+---
+
+## 🔄 Update From GitHub (Field Runbook)
+
+Use this when the server already runs an older deployed version.
+
+```bash
+# 0) Go to project
+cd ~/MT-API
+
+# 1) Pre-check
+git status
+docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml ps
+
+# 2) Backup DB (recommended)
+docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml exec mt-api-db \
+  mysqldump -u mt_user -p mt_api > backup_before_update_$(date +%Y%m%d_%H%M%S).sql
+
+# 3) Update source
+git fetch origin
+git checkout main
+git pull origin main
+
+# 4) Deploy updated containers
+docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml up -d --build backend frontend
+
+# 5) Post-check
+docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml ps
+curl -f http://localhost:8080/api/health
+```
+
+If there is an issue after update, follow rollback in `UPDATE_RUNBOOK.md`.
 
 ---
 
