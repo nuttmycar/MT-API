@@ -1,7 +1,7 @@
 # 🚀 MT-API Ubuntu Installation Guide
 
 **Tested on:** Ubuntu 24.04.4 LTS  
-**Last Updated:** April 2026
+**Last Updated:** April 20, 2026
 
 ---
 
@@ -14,6 +14,7 @@
 5. [Configuration](#configuration)
 6. [Common Issues](#common-issues)
 7. [Maintenance](#maintenance)
+8. [What's New](#whats-new)
 
 ---
 
@@ -214,6 +215,8 @@ AUTO_BACKUP_ENABLED=true
 AUTO_BACKUP_INTERVAL=86400
 BACKUP_RETENTION_DAYS=30
 ```
+
+> **Note:** Email notification settings (SMTP host, user, password, etc.) are configured via the **Settings UI** in the dashboard and stored in the database — no `.env` changes required.
 
 ### Docker Compose Customization
 
@@ -538,6 +541,9 @@ After setup, verify:
 - [ ] Firewall rules updated: `sudo ufw status`
 - [ ] Auto-start enabled: Containers restart after reboot
 - [ ] Monitoring setup: Health check script configured
+- [ ] `generated_users` table exists: Check Settings → Database or backend logs
+- [ ] Email notifications: Configure SMTP via Settings UI (optional)
+- [ ] Rate limiting active: `/api/health` returns 200 within 300 req/min
 
 ---
 
@@ -548,3 +554,42 @@ Your MT-API installation is complete and ready for production use on Ubuntu 24.0
 For questions or issues, refer to the troubleshooting section or check the application logs.
 
 **Happy monitoring! 🚀**
+
+---
+
+## 🆕 What's New
+
+### April 2026 Updates
+
+#### 🗄️ Generated/Imported Users — Database Persistence
+- New table `generated_users` is created automatically on first start
+- Generated and imported users are saved to the database (not just MikroTik)
+- Supports re-printing QR coupons, editing, and batch management
+- New API routes: `GET/POST /api/generated-users`, `PUT /api/generated-users/:id`, etc.
+
+#### 🛡️ Rate Limiting (Brute Force Protection)
+- Built-in in-memory rate limiter — **no extra packages required**
+- Login: 10 attempts / 15 minutes per IP
+- Registration: 5 requests / hour per IP
+- General API: 300 requests / minute per IP
+- Returns `429 Too Many Requests` when exceeded
+
+#### ✅ Bulk Approve
+- Approve multiple pending users at once from the admin dashboard
+- Each user is synced to MikroTik sequentially
+- New endpoint: `POST /api/requests/bulk-approve`
+
+#### 📧 Email Notification on Approval
+- Sends SMTP email to user when their account is approved
+- Pure Node.js implementation — no `nodemailer` dependency
+- Configured entirely via **Settings UI** (stored in database)
+- Supports custom subject/body template with `{{username}}`, `{{password}}`, `{{fullName}}`
+
+#### 📅 User Expiry Date
+- Admin can set an expiry date per user via the Edit modal
+- Column `expiryDate DATE` added to `user_requests` table
+
+#### 🚨 MikroTik Offline Alert
+- System notifications now include MikroTik connectivity status
+- Sends LINE/Telegram alert when MikroTik is unreachable
+- Triggered automatically on each `/api/system/notifications` poll

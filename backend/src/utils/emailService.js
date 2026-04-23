@@ -60,29 +60,42 @@ const sendApprovalEmail = async ({ fullName, username, password, email }) => {
     .replace(/{{username}}/g, username || '')
     .replace(/{{password}}/g, password || '');
 
-  // Use Node's built-in net to send SMTP (no external dependency)
+  return smtpSend({ config, to: email, subject, body });
+};
+
+/**
+ * Pure Node.js SMTP sender.
+ * Supports:
+ *   - Port 465  → Implicit TLS (connect with tls.connect directly)
+ *   - Port 587  → STARTTLS (plain connect → STARTTLS upgrade → re-EHLO → AUTH)
+ *   - Port 25   → Plain (no TLS, rare, for internal relays)
+ * AUTH method: AUTH PLAIN
+ */
+function smtpSend({ config, to, subject, body }) {
   return new Promise((resolve) => {
     const net = require('net');
     const tls = require('tls');
-    const port = Number(config.port) || 587;
-    const secure = config.secure === true || port === 465;
 
-    const rawMessage = [
-      `From: "${config.fromName}" <${config.fromAddress}>`,
-      `To: ${email}`,
-      `Subject: ${subject}`,
-      `MIME-Version: 1.0`,
-      `Content-Type: text/plain; charset=UTF-8`,
-      ``,
+    const port = Number(config.port) || 587;
+    const implicitTLS = config.secure === true || port === 465;
+
+    const rawMessage = buildMimeMessage({
+      from: `"${config.fromName || 'MT-API'}" <${config.fromAddress}>`,
+      to,
+      subject,
       body,
-    ].join('\r\n');
+    });
 
     const b64Creds = Buffer.from(`\0${config.user}\0${config.password}`).toString('base64');
 
     let socket;
-    let buffer = '';
-    let step = 0;
+    let buf = '';
     let resolved = false;
+
+    // SMTP conversation state machine
+    // States: GREETING → EHLO → [STARTTLS → EHLO2 →] AUTH → MAIL → RCPT → DATA → BODY → QUIT
+    let state = 'GREETING';
+    let starttlsAdvertised = false;
 
     const finish = (success, message) => {
       if (resolved) return;
@@ -91,39 +104,155 @@ const sendApprovalEmail = async ({ fullName, username, password, email }) => {
       resolve({ success, message });
     };
 
-    const send = (cmd) => socket.write(cmd + '\r\n');
+    const write = (cmd) => {
+      try { socket.write(cmd + '\r\n'); } catch (e) { finish(false, e.message); }
+    };
 
-    const onData = (data) => {
-      buffer += data.toString();
-      const lines = buffer.split('\r\n');
-      buffer = lines.pop();
+    // Process one complete (final) SMTP response line
+    const handleResponse = (code, text) => {
+      if (code >= 400) {
+        finish(false, `SMTP ${code}: ${text}`);
+        return;
+      }
+
+      switch (state) {
+        case 'GREETING':
+          // Server sent 220 greeting — send EHLO
+          state = 'EHLO';
+          write(`EHLO mt-api`);
+          break;
+
+        case 'EHLO':
+          // 250 OK after EHLO — decide next step
+          if (!implicitTLS && starttlsAdvertised) {
+            state = 'STARTTLS';
+            write('STARTTLS');
+          } else {
+            state = 'AUTH';
+            write(`AUTH PLAIN ${b64Creds}`);
+          }
+          break;
+
+        case 'STARTTLS':
+          // 220 ready — upgrade socket to TLS
+          if (code !== 220) { finish(false, `STARTTLS failed: ${text}`); return; }
+          const plain = socket;
+          plain.removeAllListeners('data');
+          const upgraded = tls.connect(
+            { socket: plain, host: config.host, servername: config.host },
+            () => {
+              socket = upgraded;
+              socket.on('data', onData);
+              socket.on('error', (err) => finish(false, err.message));
+              buf = '';
+              state = 'EHLO2';
+              write('EHLO mt-api');
+            }
+          );
+          upgraded.on('error', (err) => finish(false, `TLS upgrade error: ${err.message}`));
+          break;
+
+        case 'EHLO2':
+          // 250 after re-EHLO post-STARTTLS
+          state = 'AUTH';
+          write(`AUTH PLAIN ${b64Creds}`);
+          break;
+
+        case 'AUTH':
+          state = 'MAIL';
+          write(`MAIL FROM:<${config.fromAddress}>`);
+          break;
+
+        case 'MAIL':
+          state = 'RCPT';
+          write(`RCPT TO:<${to}>`);
+          break;
+
+        case 'RCPT':
+          state = 'DATA';
+          write('DATA');
+          break;
+
+        case 'DATA':
+          // 354 = send data
+          if (code !== 354) { finish(false, `DATA error: ${text}`); return; }
+          state = 'BODY';
+          write(rawMessage + '\r\n.');
+          break;
+
+        case 'BODY':
+          // 250 = message accepted
+          state = 'QUIT';
+          write('QUIT');
+          finish(true, 'Email sent successfully');
+          break;
+
+        case 'QUIT':
+          break;
+      }
+    };
+
+    const onData = (chunk) => {
+      buf += chunk.toString();
+      const lines = buf.split('\r\n');
+      buf = lines.pop(); // keep partial line
+
       for (const line of lines) {
         if (!line) continue;
         const code = parseInt(line.slice(0, 3), 10);
-        if (code >= 400) { finish(false, line); return; }
-        step++;
-        if (step === 1) send(`EHLO mt-api`);
-        else if (step === 2) send(`AUTH PLAIN ${b64Creds}`);
-        else if (step === 3) send(`MAIL FROM:<${config.fromAddress}>`);
-        else if (step === 4) send(`RCPT TO:<${email}>`);
-        else if (step === 5) send(`DATA`);
-        else if (step === 6) send(`${rawMessage}\r\n.`);
-        else if (step === 7) { send(`QUIT`); finish(true, 'Email sent'); }
+        const isFinal = line[3] === ' ' || line.length === 3; // '-' means continuation
+        const text = line.slice(4);
+
+        // Collect EHLO capabilities from continuation lines
+        if (line[3] === '-') {
+          const cap = text.toUpperCase();
+          if (cap === 'STARTTLS' || cap.startsWith('STARTTLS')) {
+            starttlsAdvertised = true;
+          }
+          continue; // don't act on continuation lines
+        }
+
+        if (isNaN(code)) continue;
+        handleResponse(code, text);
       }
     };
 
     try {
-      if (secure) {
-        socket = tls.connect({ host: config.host, port }, () => socket.on('data', onData));
+      if (implicitTLS) {
+        socket = tls.connect(
+          { host: config.host, port, servername: config.host },
+          () => { socket.on('data', onData); }
+        );
       } else {
-        socket = net.connect({ host: config.host, port }, () => socket.on('data', onData));
+        socket = net.createConnection({ host: config.host, port }, () => {
+          socket.on('data', onData);
+        });
       }
-      socket.setTimeout(10000, () => finish(false, 'SMTP timeout'));
+      socket.setTimeout(15000, () => finish(false, 'SMTP connection timed out'));
       socket.on('error', (err) => finish(false, err.message));
     } catch (err) {
       resolve({ success: false, message: err.message });
     }
   });
-};
+}
+
+function buildMimeMessage({ from, to, subject, body }) {
+  const date = new Date().toUTCString();
+  // Encode subject as UTF-8 Base64 if it contains non-ASCII
+  const encodedSubject = /[^\x00-\x7F]/.test(subject)
+    ? `=?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`
+    : subject;
+  return [
+    `Date: ${date}`,
+    `From: ${from}`,
+    `To: ${to}`,
+    `Subject: ${encodedSubject}`,
+    `MIME-Version: 1.0`,
+    `Content-Type: text/plain; charset=UTF-8`,
+    `Content-Transfer-Encoding: 8bit`,
+    ``,
+    body,
+  ].join('\r\n');
+}
 
 module.exports = { getEmailConfig, saveEmailConfig, sendApprovalEmail, DEFAULT_EMAIL_CONFIG, EMAIL_SETTING_KEY };
