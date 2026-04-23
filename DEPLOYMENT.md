@@ -161,3 +161,8 @@ cat backup_before_update_YYYYMMDD_HHMMSS.sql | \
 ## Quick Recommendation
 > ถ้าต้องการ deploy ง่ายและย้ายเครื่องสะดวก ให้ใช้ **Docker** ชุดนี้ได้เลย
 > ถ้าต้องการ integrate กับ server Linux เดิมที่มี Nginx/PM2 อยู่แล้ว ให้ใช้ **PM2 + Nginx**
+
+## Update References
+- คู่มืออัปเดตหน้างานแบบเต็ม (EN): `UPDATE_RUNBOOK.md`
+- คู่มืออัปเดตหน้างานแบบเต็ม (TH): `UPDATE_RUNBOOK_TH.md`
+- คู่มือ Ubuntu ฉบับละเอียด: `UBUNTU_SETUP_GUIDE.md`

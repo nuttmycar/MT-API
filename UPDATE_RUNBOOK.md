@@ -129,3 +129,20 @@ docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml up -d --b
 docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml ps && \
 curl -f http://localhost:8080/api/health
 ```
+
+## 10) Night Shift Quick SOP (10 Commands)
+
+Run one line at a time:
+
+```bash
+cd ~/MT-API
+git status
+git rev-parse --short HEAD
+mkdir -p backups/manual
+docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml exec mt-api-db mysqldump -u mt_user -p mt_api > backups/manual/db_before_update_$(date +%Y%m%d_%H%M%S).sql
+git fetch origin
+git checkout main
+git pull origin main
+docker compose -f docker-compose.prod.yml -f docker-compose.ubuntu.yml up -d --build backend frontend
+curl -f http://localhost:8080/api/health
+```

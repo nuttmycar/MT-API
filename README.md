@@ -51,6 +51,8 @@
 - ใช้ชุด container ที่เตรียมไว้ได้จาก `docker-compose.prod.yml`
 - คู่มือ deploy แบบย่ออยู่ใน `DEPLOYMENT.md`
 - คู่มือ deploy แบบละเอียดอยู่ใน `SERVER_DEPLOY_GUIDE.md`
+- คู่มืออัปเดตจาก GitHub (EN) อยู่ใน `UPDATE_RUNBOOK.md`
+- คู่มืออัปเดตจาก GitHub (TH) อยู่ใน `UPDATE_RUNBOOK_TH.md`
 - ตัวอย่าง Nginx production config อยู่ใน `deploy/nginx/`
 - วิธีใช้งาน Git/GitHub ดูได้ที่ `GITHUB_GUIDE.md`
 
