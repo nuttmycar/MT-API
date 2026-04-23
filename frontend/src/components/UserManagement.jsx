@@ -318,6 +318,7 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
       if (isAdmin) {
         fetchProfiles();
         fetchHotspotUsers();
+        fetchCouponSettings();
         fetchSavedUsers({ page: 1 });
         fetchBatchLabels();
       }
@@ -475,6 +476,23 @@ function UserManagementComponent({ token, isAdmin, userRole = 'super_admin', per
       }
     } catch (error) {
       console.error('[HotspotUsers] Error fetching:', error);
+    }
+  };
+
+  const fetchCouponSettings = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/settings/coupon`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        setLoginBaseUrl(String(data.loginUrl || 'http://192.168.10.1/login'));
+        setCouponBrand(String(data.brandName || 'MT-API HOTSPOT'));
+        setCouponTitle(String(data.couponTitle || 'Internet Coupon Slip'));
+      }
+    } catch (error) {
+      console.error('[CouponSettings] Error fetching:', error);
     }
   };
 

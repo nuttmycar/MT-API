@@ -28,6 +28,12 @@ const DEFAULT_APP_BRANDING = {
   faviconUrl: '',
 };
 
+const DEFAULT_COUPON_SETTINGS = {
+  loginUrl: 'http://192.168.10.1/login',
+  brandName: 'MT-API HOTSPOT',
+  couponTitle: 'Internet Coupon Slip',
+};
+
 const DEFAULT_ALERT_CONFIG = {
   enabled: false,
   coolDownMinutes: 15,
@@ -66,9 +72,11 @@ export default function Settings({ token, showAlert, onBrandingChange, permissio
   const [registrationCode, setRegistrationCode] = useState('');
   const [registrationConsent, setRegistrationConsent] = useState(DEFAULT_REGISTRATION_CONSENT);
   const [brandingConfig, setBrandingConfig] = useState(DEFAULT_APP_BRANDING);
+  const [couponSettings, setCouponSettings] = useState(DEFAULT_COUPON_SETTINGS);
   const [codeLoading, setCodeLoading] = useState(false);
   const [consentLoading, setConsentLoading] = useState(false);
   const [brandingLoading, setBrandingLoading] = useState(false);
+  const [couponLoading, setCouponLoading] = useState(false);
   const [databaseConfig, setDatabaseConfig] = useState({
     host: 'localhost',
     port: 3306,
@@ -125,6 +133,7 @@ export default function Settings({ token, showAlert, onBrandingChange, permissio
     fetchRegistrationCode();
     fetchRegistrationConsent();
     fetchBrandingConfig();
+    fetchCouponSettings();
     fetchDatabaseConfig();
     fetchDailySummary();
     fetchMikrotikConfig();
@@ -226,6 +235,62 @@ export default function Settings({ token, showAlert, onBrandingChange, permissio
       showAlert(error.message);
     } finally {
       setBrandingLoading(false);
+    }
+  };
+
+  const fetchCouponSettings = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/settings/coupon`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setCouponSettings({ ...DEFAULT_COUPON_SETTINGS, ...data });
+      }
+    } catch (error) {
+      console.error('[CouponSettings] Error fetching config:', error);
+    }
+  };
+
+  const handleSaveCouponSettings = async (event) => {
+    event.preventDefault();
+
+    if (!couponSettings.loginUrl.trim()) {
+      showAlert('กรุณากรอก Hotspot Login URL');
+      return;
+    }
+
+    if (!couponSettings.brandName.trim()) {
+      showAlert('กรุณากรอกชื่อแบรนด์บนคูปอง');
+      return;
+    }
+
+    if (!couponSettings.couponTitle.trim()) {
+      showAlert('กรุณากรอกหัวข้อบนคูปอง');
+      return;
+    }
+
+    setCouponLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/settings/coupon`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(couponSettings),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Failed to update coupon settings');
+
+      const nextSettings = { ...DEFAULT_COUPON_SETTINGS, ...(data.couponSettings || couponSettings) };
+      setCouponSettings(nextSettings);
+      showAlert('✓ บันทึกการตั้งค่าคูปองเรียบร้อยแล้ว');
+    } catch (error) {
+      showAlert(error.message);
+    } finally {
+      setCouponLoading(false);
     }
   };
 
@@ -1799,6 +1864,66 @@ export default function Settings({ token, showAlert, onBrandingChange, permissio
             className="w-full rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-semibold py-3 transition"
           >
             {brandingLoading ? 'กำลังบันทึก...' : '💾 บันทึกข้อความและ Logo'}
+          </button>
+        </form>
+      </div>
+
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-black">🎟️ ตั้งค่าคูปอง QR</h2>
+            <p className="mt-1 text-sm text-gray-500">กำหนด URL สำหรับ Hotspot Login, ชื่อแบรนด์ และหัวข้อที่แสดงบนคูปอง QR</p>
+          </div>
+          <div className="rounded-xl bg-orange-50 px-4 py-3 text-sm text-orange-900 ring-1 ring-orange-200">
+            ค่าที่บันทึกที่นี่จะถูกใช้ตอนพิมพ์คูปองจากเมนูผู้ใช้โดยอัตโนมัติ
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveCouponSettings} className="space-y-4">
+          <label className="space-y-2 block">
+            <span className="text-sm font-medium text-gray-700">1) Hotspot Login URL สำหรับ QR Code</span>
+            <input
+              type="text"
+              value={couponSettings.loginUrl}
+              onChange={(e) => setCouponSettings({ ...couponSettings, loginUrl: e.target.value })}
+              placeholder="เช่น http://192.168.10.1/login"
+              className="w-full rounded-lg border border-gray-300 px-4 py-2 text-black bg-white outline-none focus:border-blue-500"
+              required
+            />
+          </label>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="space-y-2 block">
+              <span className="text-sm font-medium text-gray-700">2) ชื่อแบรนด์บนคูปอง</span>
+              <input
+                type="text"
+                value={couponSettings.brandName}
+                onChange={(e) => setCouponSettings({ ...couponSettings, brandName: e.target.value })}
+                placeholder="เช่น MT-API HOTSPOT"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-black bg-white outline-none focus:border-blue-500"
+                required
+              />
+            </label>
+
+            <label className="space-y-2 block">
+              <span className="text-sm font-medium text-gray-700">3) หัวข้อบนคูปอง</span>
+              <input
+                type="text"
+                value={couponSettings.couponTitle}
+                onChange={(e) => setCouponSettings({ ...couponSettings, couponTitle: e.target.value })}
+                placeholder="เช่น Internet Coupon Slip"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-black bg-white outline-none focus:border-blue-500"
+                required
+              />
+            </label>
+          </div>
+
+          <button
+            type="submit"
+            disabled={couponLoading || !canUpdateSettings}
+            className="w-full rounded-lg bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 text-white font-semibold py-3 transition"
+          >
+            {couponLoading ? 'กำลังบันทึก...' : '💾 บันทึกการตั้งค่าคูปอง'}
           </button>
         </form>
       </div>

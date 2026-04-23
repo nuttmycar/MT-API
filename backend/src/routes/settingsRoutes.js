@@ -60,6 +60,12 @@ const DEFAULT_APP_BRANDING = {
   faviconUrl: '',
 };
 
+const DEFAULT_COUPON_SETTINGS = {
+  loginUrl: 'http://192.168.10.1/login',
+  brandName: 'MT-API HOTSPOT',
+  couponTitle: 'Internet Coupon Slip',
+};
+
 const DEFAULT_REGISTRATION_CONSENT = {
   enabled: true,
   title: 'เงื่อนไขการใช้งานระบบเครือข่ายและการคุ้มครองข้อมูลส่วนบุคคล',
@@ -122,6 +128,31 @@ const getRegistrationConsentConfig = async () => {
   } catch (error) {
     console.warn('[Settings-Consent] Invalid JSON, using defaults');
     return DEFAULT_REGISTRATION_CONSENT;
+  }
+};
+
+const getCouponSettingsConfig = async () => {
+  const sequelize = getSequelize();
+  const result = await sequelize.query(
+    'SELECT setting_value FROM settings WHERE setting_key = ?',
+    {
+      replacements: ['coupon_settings'],
+      type: QueryTypes.SELECT,
+    }
+  );
+
+  if (!result?.[0]?.setting_value) {
+    return DEFAULT_COUPON_SETTINGS;
+  }
+
+  try {
+    return {
+      ...DEFAULT_COUPON_SETTINGS,
+      ...JSON.parse(result[0].setting_value),
+    };
+  } catch (error) {
+    console.warn('[Settings-Coupon] Invalid JSON, using defaults');
+    return DEFAULT_COUPON_SETTINGS;
   }
 };
 
@@ -674,6 +705,67 @@ router.post('/branding', protect, requireActionAccess('settings', 'update'), aud
     res.json({ message: 'Branding updated', branding });
   } catch (error) {
     console.error('[Settings-Branding] Save error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.get('/coupon', protect, async (req, res) => {
+  try {
+    const couponSettings = await getCouponSettingsConfig();
+    res.json(couponSettings);
+  } catch (error) {
+    console.error('[Settings-Coupon] Error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.get('/coupon/public', async (req, res) => {
+  try {
+    const couponSettings = await getCouponSettingsConfig();
+    res.json(couponSettings);
+  } catch (error) {
+    console.error('[Settings-Coupon-Public] Error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.post('/coupon', protect, requireActionAccess('settings', 'update'), auditAction({ action: 'SETTINGS_COUPON_UPDATE', entityType: 'setting' }), async (req, res) => {
+  try {
+    const couponSettings = {
+      ...DEFAULT_COUPON_SETTINGS,
+      ...req.body,
+      loginUrl: String(req.body?.loginUrl || DEFAULT_COUPON_SETTINGS.loginUrl).trim(),
+      brandName: String(req.body?.brandName || DEFAULT_COUPON_SETTINGS.brandName).trim(),
+      couponTitle: String(req.body?.couponTitle || DEFAULT_COUPON_SETTINGS.couponTitle).trim(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (!couponSettings.loginUrl) {
+      return res.status(400).json({ message: 'Hotspot login URL is required' });
+    }
+
+    if (!couponSettings.brandName) {
+      return res.status(400).json({ message: 'Coupon brand name is required' });
+    }
+
+    if (!couponSettings.couponTitle) {
+      return res.status(400).json({ message: 'Coupon title is required' });
+    }
+
+    const sequelize = getSequelize();
+    const value = JSON.stringify(couponSettings);
+
+    await sequelize.query(
+      'INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?',
+      {
+        replacements: ['coupon_settings', value, value],
+        type: QueryTypes.INSERT,
+      }
+    );
+
+    res.json({ message: 'Coupon settings updated', couponSettings });
+  } catch (error) {
+    console.error('[Settings-Coupon] Save error:', error);
     res.status(500).json({ message: error.message });
   }
 });
